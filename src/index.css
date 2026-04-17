@@ -1,0 +1,130 @@
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+:root {
+  /* Colors */
+  --primary-color: #ff4d6d;
+  --bg-color: #f2f4f6; /* Toss light grey BG */
+  --card-bg: #ffffff;
+  --text-primary: #191f28; /* Toss black */
+  --text-secondary: #8b95a1; /* Toss grey */
+  --border-color: #e5e8eb;
+  
+  /* Cycle Colors (Very light pastels) */
+  --cycle-menstruation: #fff0f3; /* 옅은 핑크 */
+  --cycle-follicular: #fffae6; /* 옅은 노랑 */
+  --cycle-ovulation: #f0fdf4; /* 옅은 민트 */
+  --cycle-luteal: #f8f9fa; /* 옅은 회색 */
+
+  /* Event Dot Colors */
+  --event-work: #3182f6; /* Toss Blue */
+  --event-social: #f59f00; /* Toss Orange */
+  --event-health: #ff4d6d; /* Primary Pink */
+  --event-daily: #00c471; /* Toss Green */
+  
+  /* Spacing (4px unit system) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  
+  /* Border Radius */
+  --rad-sm: 8px;
+  --rad-md: 16px;
+  --rad-lg: 24px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: 'Pretendard', sans-serif;
+}
+
+body {
+  background-color: #e0e0e0; 
+  color: var(--text-primary);
+}
+
+.app-container {
+  max-width: 480px;
+  margin: 0 auto;
+  height: 100vh;
+  background-color: var(--bg-color);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 0 20px rgba(0,0,0,0.1);
+}
+
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 70px;
+}
+
+.page-container {
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.description {
+  color: var(--text-secondary);
+  line-height: 1.5;
+  font-size: 14px;
+}
+
+/* Card Style */
+.toss-card {
+  background-color: var(--card-bg);
+  border-radius: var(--rad-lg);
+  padding: var(--space-6);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+}
+
+/* Bottom Navigation */
+.bottom-nav {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 64px;
+  background-color: var(--card-bg);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  z-index: 10;
+}
+
+.nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-decoration: none;
+  color: var(--text-secondary);
+  gap: var(--space-1);
+  flex: 1;
+  padding: var(--space-2) 0;
+  transition: color 0.1s ease-in-out;
+}
+
+.nav-item span {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.nav-item.active {
+  color: var(--primary-color);
+}
