@@ -5,6 +5,8 @@ import CalendarPage from './pages/CalendarPage';
 import ScannerPage from './pages/ScannerPage';
 import ChatbotPage from './pages/ChatbotPage';
 import ProfilePage from './pages/ProfilePage';
+import DiaryPage from './pages/DiaryPage';
+import ContentsPage from './pages/ContentsPage';
 
 function App() {
   return (
@@ -13,6 +15,8 @@ function App() {
         <Route path="/" element={<RootLayout />}>
           <Route index element={<HomePage />} />
           <Route path="calendar" element={<CalendarPage />} />
+          <Route path="diary" element={<DiaryPage />} />
+          <Route path="contents" element={<ContentsPage />} />
           <Route path="scanner" element={<ScannerPage />} />
           <Route path="chatbot" element={<ChatbotPage />} />
           <Route path="profile" element={<ProfilePage />} />

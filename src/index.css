@@ -2,38 +2,35 @@
 
 :root {
   /* Colors */
-  --primary-color: #ff4d6d;
-  --bg-color: #f2f4f6; /* Toss light grey BG */
+  --primary-color: #FF7CA8; 
+  --primary-light: #FFF0F5; 
+  --primary-gradient: linear-gradient(135deg, #FF9BAA 0%, #FF7CA8 100%);
+  --bg-color: #F2F4F7; /* Match figma bg */
   --card-bg: #ffffff;
-  --text-primary: #191f28; /* Toss black */
-  --text-secondary: #8b95a1; /* Toss grey */
-  --border-color: #e5e8eb;
+  --surface-gray: #F8F9FA;
+  --surface-gray-alt: #EDF1F5;
+  --text-primary: #1A1A1A; /* Solid dark */
+  --text-secondary: #767B82; /* Muted gray */
+  --border-color: #F1F3F5;
   
-  /* Cycle Colors (Very light pastels) */
-  --cycle-menstruation: #fff0f3; /* 옅은 핑크 */
-  --cycle-follicular: #fffae6; /* 옅은 노랑 */
-  --cycle-ovulation: #f0fdf4; /* 옅은 민트 */
-  --cycle-luteal: #f8f9fa; /* 옅은 회색 */
-
-  /* Event Dot Colors */
-  --event-work: #3182f6; /* Toss Blue */
-  --event-social: #f59f00; /* Toss Orange */
-  --event-health: #ff4d6d; /* Primary Pink */
-  --event-daily: #00c471; /* Toss Green */
+  /* Premium Shadow */
+  --shadow-premium: 0 10px 40px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.02);
   
-  /* Spacing (4px unit system) */
+  /* Spacing */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
+  --space-5: 24px; /* Increased padding */
+  --space-6: 32px;
+  --space-8: 48px;
   
   /* Border Radius */
-  --rad-sm: 8px;
-  --rad-md: 16px;
-  --rad-lg: 24px;
+  --rad-sm: 12px;
+  --rad-md: 20px;
+  --rad-lg: 28px;
+  --rad-xl: 40px;
 }
 
 * {
@@ -41,6 +38,7 @@
   margin: 0;
   padding: 0;
   font-family: 'Pretendard', sans-serif;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -52,7 +50,7 @@ body {
   max-width: 480px;
   margin: 0 auto;
   height: 100vh;
-  background-color: var(--bg-color);
+  background-color: var(--bg-color); /* Restored for seamless gray pages */
   position: relative;
   overflow: hidden;
   display: flex;
@@ -63,34 +61,64 @@ body {
 .main-content {
   flex: 1;
   overflow-y: auto;
-  padding-bottom: 70px;
+  /* padding-bottom moved to individual pages to handle background colors */
 }
 
 .page-container {
-  padding: var(--space-5);
+  padding: var(--space-4) var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
 }
 
-.title {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
+/* Typography utilities */
+.text-h1 { font-size: 24px; font-weight: 700; color: var(--text-primary); line-height: 1.4; }
+.text-h2 { font-size: 20px; font-weight: 700; color: var(--text-primary); line-height: 1.4; }
+.text-h3 { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+.text-body { font-size: 14px; color: var(--text-primary); line-height: 1.5; }
+.text-caption { font-size: 13px; color: var(--text-secondary); }
+.text-caption-sm { font-size: 12px; color: var(--text-secondary); }
 
-.description {
-  color: var(--text-secondary);
-  line-height: 1.5;
-  font-size: 14px;
-}
-
-/* Card Style */
-.toss-card {
+/* Common UI Elements */
+.white-card {
   background-color: var(--card-bg);
   border-radius: var(--rad-lg);
-  padding: var(--space-6);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+  padding: var(--space-5);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.04);
+}
+
+.surface-box {
+  background-color: var(--surface-gray);
+  border-radius: var(--rad-md);
+  padding: var(--space-4);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--rad-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 15px;
+  padding: 14px var(--space-4);
+}
+
+.btn-primary {
+  background: var(--primary-light);
+  color: var(--primary-color);
+}
+
+.btn-primary-filled {
+  background: var(--primary-color);
+  color: white;
+}
+
+.btn-secondary {
+  background-color: var(--surface-gray);
+  color: var(--text-primary);
 }
 
 /* Bottom Navigation */
@@ -100,7 +128,8 @@ body {
   left: 0;
   width: 100%;
   height: 64px;
-  background-color: var(--card-bg);
+  background-color: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
   border-top: 1px solid var(--border-color);
   display: flex;
   justify-content: space-around;
@@ -113,18 +142,18 @@ body {
   flex-direction: column;
   align-items: center;
   text-decoration: none;
-  color: var(--text-secondary);
-  gap: var(--space-1);
+  color: #adb5bd;
+  gap: 4px;
   flex: 1;
   padding: var(--space-2) 0;
-  transition: color 0.1s ease-in-out;
+  transition: all 0.1s ease-in-out;
 }
 
 .nav-item span {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
 }
 
 .nav-item.active {
-  color: var(--primary-color);
+  color: var(--text-primary);
 }

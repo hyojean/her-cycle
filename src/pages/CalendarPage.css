@@ -1,9 +1,9 @@
 /* src/pages/CalendarPage.css */
 
 .calendar-page {
-  background-color: #f4f5f7;
+  background-color: var(--bg-color);
   min-height: 100vh;
-  padding-bottom: 90px;
+  padding-bottom: 120px;
   position: relative;
   overflow-x: hidden;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -18,7 +18,7 @@
   display: flex;
   align-items: center;
   padding: 16px 20px;
-  background-color: #f4f5f7;
+  background-color: var(--bg-color);
   position: sticky;
   top: 0;
   z-index: 10;
@@ -37,15 +37,16 @@
 /* Hero Banner */
 .hero-banner {
   background-color: #232428; 
-  border-radius: 20px;
+  border-radius: 28px; /* Increased roundness */
   margin: 0 20px 24px 20px;
-  padding: 12px 24px; /* Reduced vertical padding */
+  padding: 0 24px; /* Completely removed vertical padding to minimize height */
   display: flex; align-items: center; justify-content: space-between;
   position: relative; overflow: hidden;
 }
 .hero-text {
-  color: #fff; font-size: 20px; font-weight: 600; line-height: 1.4; /* Increased size */
+  color: #fff; font-size: 20px; font-weight: 600; line-height: 1.4;
   z-index: 1;
+  padding-left: 12px; /* Moved text slightly to the right */
 }
 
 .hero-highlight {
@@ -54,17 +55,11 @@
   z-index: 1;
 }
 .hero-highlight::after {
-  content: '';
-  position: absolute;
-  left: 0; right: 0; bottom: 2px;
-  height: 10px; /* Thicker based on font size increase */
-  background: rgba(123, 143, 247, 0.4);
-  z-index: -1;
-  border-radius: 2px;
+  display: none; /* Removed the highlight underline */
 }
 
 .hero-icon {
-  width: 125px; height: 125px; /* Significantly Increased size */
+  width: 135px; height: 135px; /* Further increased size */
   object-fit: contain; z-index: 1;
 }
 
