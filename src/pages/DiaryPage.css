@@ -1,77 +1,457 @@
-.diary-container {
-  display: flex;
-  flex-direction: column;
-  background-color: #FFFFFF;
+/* 일기 및 기록 — 피그마 시안 정렬 */
+
+.diary-page {
   min-height: 100vh;
   padding-bottom: 120px;
+  background-color: #ffffff;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
-.diary-header {
-  padding: var(--space-6) var(--space-5) var(--space-4);
-  background-color: #FFFFFF;
+.diary-page--modal-open {
+  overflow: hidden;
+  height: 100vh;
 }
 
-.diary-content {
-  padding: var(--space-4) var(--space-5) var(--space-8);
+/* 캘린더와 공유하는 .page-header는 기본 회색 배경 → 일기 탭만 흰색 */
+.diary-page .page-header {
+  background-color: #ffffff;
+}
+
+/* 월간: 래퍼는 레이아웃만 통과 / 주간: 상단~주간 캡슐까지 연한 배경 + 하단 라운드 */
+.diary-top-block {
+  width: 100%;
+}
+
+.diary-top-block:not(.diary-top-block--week) {
+  display: contents;
+}
+
+.diary-top-block--week {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  background-color: #ffffff;
+  border-radius: 0 0 28px 28px;
+  padding-bottom: 24px;
+  box-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.04);
+}
+
+/* 주간 패널과 일정·일기 블록 사이 */
+.diary-top-block--week + .diary-log-section {
+  margin-top: 28px;
+}
+
+
+/* 상단 헤더·히어로는 CalendarPage.css의 .page-header, .hero-banner 등과 공유 */
+
+/* 매주/매월: HomePage.css의 .lang-toggle / .lang-btn 재사용 */
+.diary-lang-toggle-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 0 20px 20px;
+}
+
+.diary-lang-toggle-wrap .lang-toggle {
+  margin-bottom: 0;
+}
+
+/* 캘린더 카드 */
+.diary-calendar-card {
+  background: #fff;
+  border-radius: 24px;
+  margin: 0 20px 20px;
+  padding: 22px 18px 18px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+}
+
+.diary-calendar-toolbar {
+  margin-bottom: 20px;
+}
+
+.diary-calendar-card.diary-calendar-card--week {
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  margin-bottom: 0;
+  padding: 4px 20px 0;
+}
+
+/* 매주: 7일 전부 하나의 연한 핑크 캡슐 + 열마다 요일/날짜 세로, 선택 시 세로 알약 테두리 */
+.diary-week-view {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
-  flex: 1;
 }
 
-.diary-textarea {
-  width: 100%;
-  min-height: 150px;
-  border: none;
-  resize: none;
-  font-size: 15px;
-  line-height: 1.5;
-  color: var(--text-primary);
-  outline: none;
-}
-
-.record-tags-grid {
+/* 선택일 기준 현재 주기 — 주간 캡슐 우상단 (월간 범례와 동일 legend-item 스타일) */
+.diary-week-current-phase {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.record-tag-btn {
-  background-color: white;
-  border: 1px solid var(--border-color);
-  border-radius: 20px;
-  padding: 8px 16px;
-  font-size: 14px;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.record-tag-btn.active {
-  background-color: var(--primary-light);
-  border-color: var(--primary-color);
-  color: var(--primary-color);
-  font-weight: 600;
-}
-
-.ai-advice-panel {
-  background: white;
-  border-radius: var(--rad-md);
-  padding: var(--space-5);
-  box-shadow: var(--shadow-sm);
-}
-
-.advice-header {
-  display: flex;
+  justify-content: flex-end;
   align-items: center;
-  gap: var(--space-2);
+  margin-bottom: 8px;
+  padding: 0 2px 0 8px;
 }
 
-.advice-icon {
+.diary-week-strip-pill {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  min-height: 76px;
+  background: #fff5f7;
+  border-radius: 32px;
+  /* 세로 패딩 없음 → 열(선택 테두리) 높이 = 핑크 캡슐 박스 전체 세로 */
+  padding: 0 8px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.diary-week-col {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 2.5px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  padding: 0 4px;
+  margin: 0 1px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.diary-week-col-dow {
+  font-size: 12px;
+  font-weight: 500;
+  color: #8b95a1;
+  line-height: 1.2;
+}
+
+.diary-week-col-day {
+  font-size: 14px;
+  font-weight: 500;
+  color: #8b95a1;
+  line-height: 1.2;
+}
+
+.diary-week-col.is-selected {
+  border-color: #ffd0dc;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.diary-week-col.is-selected .diary-week-col-dow,
+.diary-week-col.is-selected .diary-week-col-day {
+  color: #000000;
+  font-weight: 700;
+}
+
+.diary-week-col.is-outside .diary-week-col-dow,
+.diary-week-col.is-outside .diary-week-col-day {
+  color: #c5c9ce;
+}
+
+.diary-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0;
+}
+
+.diary-weekdays {
+  margin-bottom: 6px;
+}
+
+.diary-weekday {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 500;
+  color: #8b95a1;
+  padding-bottom: 4px;
+}
+
+.diary-weekday.is-sun {
+  color: #8b95a1;
+}
+
+.diary-day-cell {
+  position: relative;
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding-left: 0;
+  padding-right: 0;
+  padding-bottom: 0;
+}
+
+.diary-day-cell:disabled {
+  cursor: default;
+}
+
+.diary-day-cell.is-dimmed .diary-day-num {
+  color: #b0b8c1;
+}
+
+.diary-day-cell.is-dimmed .diary-day-num.is-sun {
+  color: #b0b8c1;
+}
+
+.diary-day-num {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333d4b;
   width: 28px;
   height: 28px;
-  border-radius: 50%;
-  background-color: var(--primary-light);
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 50%;
+  box-sizing: border-box;
+  z-index: 2;
+}
+
+.diary-day-num.is-sun {
+  color: #ff4d6d;
+}
+
+.diary-day-cell.is-selected .diary-day-num {
+  border: 1px solid #ff8ba7;
+}
+
+.diary-day-cell.cycle-menstruation {
+  background-color: #fff4f7;
+}
+.diary-day-cell.cycle-follicular {
+  background-color: #fffdf0;
+}
+.diary-day-cell.cycle-ovulation {
+  background-color: #eefff4;
+}
+.diary-day-cell.cycle-luteal {
+  background-color: #f4f7ff;
+}
+
+.diary-day-cell.radius-all {
+  border-radius: 12px;
+}
+.diary-day-cell.radius-left {
+  border-top-left-radius: 12px;
+  border-bottom-left-radius: 12px;
+}
+.diary-day-cell.radius-right {
+  border-top-right-radius: 12px;
+  border-bottom-right-radius: 12px;
+}
+.diary-day-cell.radius-none {
+  border-radius: 0;
+}
+
+.diary-event-dot {
+  position: absolute;
+  bottom: 10px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: #191f28;
+  z-index: 2;
+}
+
+/* 선택일 일정·일기 — 캘린더 카드보다 좌측 여백을 넉넉히 두어 시각적으로 우측으로 이동 */
+.diary-log-section {
+  margin: 10px 20px 40px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  background: #ffffff;
+}
+
+.diary-log-empty {
+  font-size: 14px;
+  color: #8e8e93;
+  text-align: center;
+  padding: 20px 8px;
+  line-height: 1.5;
+}
+
+.diary-log-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  background: #ffffff;
+}
+
+.diary-log-accent {
+  width: 5px;
+  height: 52px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: #ffc0cb;
+}
+
+.diary-log-row--note .diary-log-accent {
+  background: #1a1c1e;
+}
+
+.diary-log-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 2px 0;
+}
+
+.diary-log-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: #000000;
+  line-height: 1.45;
+  margin: 0;
+  word-break: keep-all;
+}
+
+.diary-log-time {
+  font-size: 12px;
+  font-weight: 400;
+  color: #8e8e93;
+  margin: 0;
+  line-height: 1.35;
+}
+
+/* 일기 작성 — 아래 간격은 일정 섹션과의 간격(40px)과 동일 */
+.diary-write-section {
+  margin: 0 20px 40px 32px;
+}
+
+.diary-write-heading {
+  font-size: 16px;
+  font-weight: 700;
+  color: #000000;
+  margin: 0 0 12px;
+  letter-spacing: -0.02em;
+}
+
+.diary-write-box {
+  background: #f1f3f5;
+  border-radius: 16px;
+  padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.diary-write-textarea {
+  width: 100%;
+  border: none;
+  background: transparent;
+  resize: none;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #000000;
+  min-height: 96px;
+  outline: none;
+  font-family: inherit;
+}
+
+.diary-write-textarea::placeholder {
+  color: #8e8e93;
+}
+
+.diary-write-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.diary-mini-btn {
+  padding: 9px 16px;
+  border-radius: 12px;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.diary-mini-btn--secondary {
+  background: #e9ecef;
+  color: #4e5968;
+}
+
+.diary-mini-btn--primary {
+  background: #dee2e6;
+  color: #333d4b;
+}
+
+.diary-mini-btn:active {
+  opacity: 0.9;
+}
+
+/* 생활 팁 */
+.diary-tips-section {
+  margin: 0 20px 32px;
+}
+
+.diary-tips-heading {
+  font-size: 16px;
+  font-weight: 700;
+  color: #191f28;
+  margin-bottom: 12px;
+}
+
+.diary-tips-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.diary-tip-card {
+  background: #f1f3f5;
+  border-radius: 16px;
+  padding: 14px 14px 16px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #333d4b;
+}
+
+.diary-tip-card--foods {
+  padding-top: 12px;
+}
+
+.diary-tip-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diary-tip-card--wide {
+  grid-column: 1 / -1;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

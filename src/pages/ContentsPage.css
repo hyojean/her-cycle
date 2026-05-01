@@ -17,22 +17,26 @@
   background-color: var(--surface-gray);
   border: none;
   border-radius: var(--rad-md);
-  padding: 0 var(--space-4) 0 40px;
+  padding: 0 42px 0 var(--space-4);
   font-size: 14px;
-  margin-top: var(--space-4);
+  margin: 0;
   outline: none;
+  line-height: 44px;
+  box-sizing: border-box;
 }
 
 .contents-search-wrapper {
   position: relative;
+  margin-top: var(--space-4);
 }
 
 .contents-search-icon {
   position: absolute;
-  left: 14px;
+  right: 14px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--text-secondary);
+  pointer-events: none;
 }
 
 /* Hero Article */

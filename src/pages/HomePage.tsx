@@ -5,6 +5,7 @@ import './HomePage.css';
 
 export default function HomePage() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [lang, setLang] = useState<'ko' | 'en'>('en');
 
   const handleMockLogin = () => {
     setIsLoggedIn(true);
@@ -53,9 +54,25 @@ export default function HomePage() {
     <div className="home-container">
       {/* Top Greeting Card */}
       <div className="main-greeting-card">
-        <div className="lang-toggle">
-          <button className="lang-btn">한국어</button>
-          <button className="lang-btn active">English</button>
+        <div className="lang-toggle" role="tablist" aria-label="언어 선택">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={lang === 'ko'}
+            className={`lang-btn ${lang === 'ko' ? 'active' : ''}`}
+            onClick={() => setLang('ko')}
+          >
+            한국어
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={lang === 'en'}
+            className={`lang-btn ${lang === 'en' ? 'active' : ''}`}
+            onClick={() => setLang('en')}
+          >
+            English
+          </button>
         </div>
 
         <div className="character-placeholder" style={{ backgroundColor: 'transparent', position: 'relative' }}>

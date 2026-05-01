@@ -1,45 +1,420 @@
-import { Plus, Info } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ChevronLeft, ChevronDown } from 'lucide-react';
+import './CalendarPage.css';
+import './HomePage.css';
 import './DiaryPage.css';
+import heroIcon from '../assets/calendar_hero_3d_icon.png';
+import { getFullCalendarDays, formatDateString } from '../utils/date';
+
+const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+/** 2026년 4월 시안 기준 주기 구간 (피그마 그리드와 동일) */
+function getApril2026Phase(day: number): 'menstruation' | 'follicular' | 'ovulation' | 'luteal' | null {
+  if (day >= 7 && day <= 13) return 'menstruation';
+  if (day >= 14 && day <= 20) return 'follicular';
+  if (day >= 21 && day <= 25) return 'ovulation';
+  if (day >= 26 && day <= 30) return 'luteal';
+  return null;
+}
+
+function getPhaseForCell(
+  year: number,
+  month: number,
+  day: number,
+  isCurrentMonth: boolean
+): 'menstruation' | 'follicular' | 'ovulation' | 'luteal' | null {
+  if (!isCurrentMonth) return null;
+  if (year === 2026 && month === 3) return getApril2026Phase(day);
+  return null;
+}
+
+const PHASE_LABELS: Record<'menstruation' | 'follicular' | 'ovulation' | 'luteal', string> = {
+  menstruation: '생리기',
+  follicular: '난포기',
+  ovulation: '배란기',
+  luteal: '황체기',
+};
+
+type LogEntry = {
+  id: string;
+  title: string;
+  timeLabel: string;
+  variant: 'activity' | 'note';
+};
+
+const LOGS_BY_DATE: Record<string, LogEntry[]> = {
+  '2026-04-09': [
+    {
+      id: '1',
+      title: '새벽 등산 3km 왕복 러닝',
+      timeLabel: '오전 4시 - 오전 5시',
+      variant: 'activity',
+    },
+    {
+      id: '2',
+      title: '프로젝트 헤일메리 영화 관람',
+      timeLabel: '오후 9시 - 오후 10시',
+      variant: 'activity',
+    },
+    {
+      id: '3',
+      title: '내 기분을 잘 모르겠고 복통이 조금 있어서 일에 집중이 안되었음...',
+      timeLabel: '오후 1시 14분',
+      variant: 'note',
+    },
+  ],
+};
+
+/** 일기가 기록된 날짜에만 캘린더에 점 표시 (현재 목 데이터) */
+const DOT_DATES = new Set(['2026-04-09']);
+
+function getWeekDatesContaining(year: number, month: number, day: number): Date[] {
+  const anchor = new Date(year, month, day);
+  const sun = new Date(anchor);
+  sun.setHours(0, 0, 0, 0);
+  sun.setDate(anchor.getDate() - anchor.getDay());
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(sun);
+    d.setDate(sun.getDate() + i);
+    return d;
+  });
+}
 
 export default function DiaryPage() {
+  const navigate = useNavigate();
+  const [viewMode, setViewMode] = useState<'week' | 'month'>('month');
+  const [currentDate, setCurrentDate] = useState(new Date(2026, 3, 1));
+  const [selectedDay, setSelectedDay] = useState<number | null>(9);
+  const [diaryText, setDiaryText] = useState('');
+  const [activeModal, setActiveModal] = useState<'month' | null>(null);
+  const [tempMonthSelect, setTempMonthSelect] = useState<{ y: number; m: number } | null>(null);
+
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+  const daysGrid = useMemo(() => getFullCalendarDays(year, month), [year, month]);
+
+  const monthOptions = useMemo(
+    () =>
+      Array.from({ length: 25 }, (_, i) => {
+        const d = new Date(year, month - 12 + i, 1);
+        return { year: d.getFullYear(), month: d.getMonth() };
+      }),
+    [year, month]
+  );
+
+  useEffect(() => {
+    if (activeModal === 'month') {
+      setTimeout(() => {
+        const activeItem = document.querySelector('.modal-list-item.active');
+        if (activeItem) activeItem.scrollIntoView({ behavior: 'auto', block: 'center' });
+      }, 10);
+    }
+  }, [activeModal]);
+
+  const effectiveDay = selectedDay ?? 1;
+  const weekDates = useMemo(
+    () => getWeekDatesContaining(year, month, effectiveDay),
+    [year, month, effectiveDay]
+  );
+  const selectedDateStr = formatDateString(year, month, effectiveDay);
+  const dayLogs = LOGS_BY_DATE[selectedDateStr] ?? [];
+
+  const weekdayLabel = WEEKDAYS[new Date(year, month, effectiveDay).getDay()];
+
+  const handleSelectMonth = (y: number, m: number) => {
+    setCurrentDate(new Date(y, m, 1));
+    setSelectedDay(null);
+    setActiveModal(null);
+  };
+
+  const handleWeekDateClick = (d: Date) => {
+    setCurrentDate(new Date(d.getFullYear(), d.getMonth(), 1));
+    setSelectedDay(d.getDate());
+  };
+
+  const isSameDayAsSelection = (d: Date) =>
+    selectedDay !== null &&
+    d.getFullYear() === year &&
+    d.getMonth() === month &&
+    d.getDate() === selectedDay;
+
+  const weekSelectedPhase = getPhaseForCell(year, month, effectiveDay, true);
+
   return (
-    <div className="diary-container">
-      <div className="diary-header">
-        <h1 className="text-h2">나의 일기</h1>
-        <p className="text-body text-secondary">4월 14일 (화) · 황체기 진입</p>
+    <div className={`diary-page${activeModal ? ' diary-page--modal-open' : ''}`}>
+      <div
+        className={`diary-top-block${viewMode === 'week' ? ' diary-top-block--week' : ''}`}
+      >
+        <div className="page-header">
+          <button type="button" className="back-button" onClick={() => navigate(-1)} aria-label="뒤로">
+            <ChevronLeft size={24} />
+          </button>
+          <h1 className="page-title">일기 및 기록</h1>
+          <div style={{ width: 24 }} aria-hidden />
+        </div>
+
+        {/* 캘린더 탭과 동일 구조·스타일, 문구만 일기용 */}
+        <div className="hero-banner">
+          <div className="hero-text">
+            <span className="hero-highlight">일상 기록을 남기면</span>
+            <br />
+            생활 팁을 조언해드려요
+          </div>
+          <img src={heroIcon} alt="3D Calendar Icon" className="hero-icon" />
+        </div>
+
+        <div className="diary-lang-toggle-wrap">
+        <div className="lang-toggle" role="tablist" aria-label="보기 단위">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={viewMode === 'week'}
+            className={`lang-btn ${viewMode === 'week' ? 'active' : ''}`}
+            onClick={() => setViewMode('week')}
+          >
+            매주 단위
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={viewMode === 'month'}
+            className={`lang-btn ${viewMode === 'month' ? 'active' : ''}`}
+            onClick={() => setViewMode('month')}
+          >
+            매월 단위
+          </button>
+        </div>
+        </div>
+
+        <div className={`diary-calendar-card${viewMode === 'week' ? ' diary-calendar-card--week' : ''}`}>
+        {viewMode === 'month' ? (
+          <>
+            <div className="diary-calendar-toolbar">
+              <button type="button" className="month-selector" onClick={() => setActiveModal('month')}>
+                {year}년 {month + 1}월 <ChevronDown size={20} color="#191F28" strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <div className="diary-calendar-grid diary-weekdays">
+              {WEEKDAYS.map((d, idx) => (
+                <div key={d} className={`diary-weekday ${idx === 0 ? 'is-sun' : ''}`}>
+                  {d}
+                </div>
+              ))}
+            </div>
+
+            <div className="diary-calendar-grid">
+              {daysGrid.map((dayObj, idx) => {
+                const isSunday = idx % 7 === 0;
+                const isSaturday = idx % 7 === 6;
+
+                let cellYear = year;
+                let cellMonth = month;
+                if (dayObj.isPrevMonth) {
+                  if (month === 0) {
+                    cellYear -= 1;
+                    cellMonth = 11;
+                  } else {
+                    cellMonth -= 1;
+                  }
+                } else if (dayObj.isNextMonth) {
+                  if (month === 11) {
+                    cellYear += 1;
+                    cellMonth = 0;
+                  } else {
+                    cellMonth += 1;
+                  }
+                }
+
+                const isCurrentMonth = !dayObj.isPrevMonth && !dayObj.isNextMonth;
+                const cycle = getPhaseForCell(cellYear, cellMonth, dayObj.day, isCurrentMonth);
+                const isSelected =
+                  isCurrentMonth && selectedDay !== null && selectedDay === dayObj.day;
+                const iterDateStr = formatDateString(cellYear, cellMonth, dayObj.day);
+                const hasDot = DOT_DATES.has(iterDateStr);
+
+                let radiusClass = '';
+                if (cycle && isCurrentMonth && cellYear === 2026 && cellMonth === 3) {
+                  const d = dayObj.day;
+                  const daysInApril = 30;
+                  const prevP = d > 1 ? getApril2026Phase(d - 1) : null;
+                  const nextP = d < daysInApril ? getApril2026Phase(d + 1) : null;
+                  const roundLeft = prevP !== cycle || isSunday;
+                  const roundRight = nextP !== cycle || isSaturday;
+                  if (roundLeft && roundRight) radiusClass = 'radius-all';
+                  else if (roundLeft) radiusClass = 'radius-left';
+                  else if (roundRight) radiusClass = 'radius-right';
+                  else radiusClass = 'radius-none';
+                } else if (cycle) {
+                  radiusClass = 'radius-all';
+                }
+
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    className={`diary-day-cell ${dayObj.isPrevMonth || dayObj.isNextMonth ? 'is-dimmed' : ''} ${cycle ? `cycle-${cycle} ${radiusClass}` : ''} ${isSelected ? 'is-selected' : ''}`}
+                    onClick={() => {
+                      if (!dayObj.isPrevMonth && !dayObj.isNextMonth) {
+                        setSelectedDay(dayObj.day);
+                      }
+                    }}
+                    disabled={dayObj.isPrevMonth || dayObj.isNextMonth}
+                  >
+                    <span className={`diary-day-num ${isSunday ? 'is-sun' : ''}`}>{dayObj.day}</span>
+                    {hasDot && (
+                      <span className="diary-event-dot" aria-hidden />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="calendar-legend-bar">
+              <div className="legend-items">
+                <span className="legend-item">
+                  <div className="legend-color cycle-menstruation" /> 생리기
+                </span>
+                <span className="legend-item">
+                  <div className="legend-color cycle-follicular" /> 난포기
+                </span>
+                <span className="legend-item">
+                  <div className="legend-color cycle-ovulation" /> 배란기
+                </span>
+                <span className="legend-item">
+                  <div className="legend-color cycle-luteal" /> 황체기
+                </span>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="diary-week-view">
+            {weekSelectedPhase ? (
+              <div className="diary-week-current-phase" aria-label="현재 주기">
+                <span className="legend-item">
+                  <div className={`legend-color cycle-${weekSelectedPhase}`} />
+                  {PHASE_LABELS[weekSelectedPhase]}
+                </span>
+              </div>
+            ) : null}
+            <div className="diary-week-strip-pill" role="list">
+              {weekDates.map((d, i) => {
+                const str = formatDateString(d.getFullYear(), d.getMonth(), d.getDate());
+                const outside = d.getMonth() !== month || d.getFullYear() !== year;
+                const selected = isSameDayAsSelection(d);
+                return (
+                  <button
+                    key={str}
+                    type="button"
+                    role="listitem"
+                    className={`diary-week-col${selected ? ' is-selected' : ''}${outside ? ' is-outside' : ''}`}
+                    onClick={() => handleWeekDateClick(d)}
+                  >
+                    <span className="diary-week-col-dow">{WEEKDAYS[i]}</span>
+                    <span className="diary-week-col-day">{d.getDate()}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        </div>
       </div>
 
-      <div className="diary-content">
-        <div className="white-card">
-          <textarea 
-            className="diary-textarea" 
-            placeholder="오늘 하루는 어땠나요? 기분이나 신체 변화를 적어보세요."
-          ></textarea>
-        </div>
+      <section className="diary-log-section" aria-label="선택한 날의 기록">
+        {dayLogs.length === 0 ? (
+          <p className="diary-log-empty">이 날짜에 등록된 일정이 없어요.</p>
+        ) : (
+          dayLogs.map((log) => (
+            <article
+              key={log.id}
+              className={`diary-log-row diary-log-row--${log.variant}`}
+            >
+              <span className="diary-log-accent" aria-hidden />
+              <div className="diary-log-body">
+                <p className="diary-log-title">{log.title}</p>
+                <p className="diary-log-time">{log.timeLabel}</p>
+              </div>
+            </article>
+          ))
+        )}
+      </section>
 
-        <div className="record-tags-section">
-          <h3 className="text-h3" style={{ marginBottom: 'var(--space-3)' }}>오늘의 상태 기록</h3>
-          <div className="record-tags-grid">
-            <button className="record-tag-btn active">기분 좋음</button>
-            <button className="record-tag-btn">피곤함</button>
-            <button className="record-tag-btn">아랫배 통증</button>
-            <button className="record-tag-btn">식욕 증가</button>
-            <button className="add-tag-btn"><Plus size={16}/>직접 입력</button>
+      <section className="diary-write-section" aria-label="일기 작성">
+        <h2 className="diary-write-heading">
+          {month + 1}월 {effectiveDay}일 {weekdayLabel}요일 일기
+        </h2>
+        <div className="diary-write-box">
+          <textarea
+            className="diary-write-textarea"
+            placeholder="기분, 통증, 증상 등 일상 내용을 자유롭게 기록하세요."
+            value={diaryText}
+            onChange={(e) => setDiaryText(e.target.value)}
+            rows={4}
+          />
+          <div className="diary-write-actions">
+            <button type="button" className="diary-mini-btn diary-mini-btn--secondary" onClick={() => setDiaryText('')}>
+              재작성
+            </button>
+            <button type="button" className="diary-mini-btn diary-mini-btn--primary">
+              작성 완료
+            </button>
           </div>
         </div>
+      </section>
 
-        <div className="ai-advice-panel">
-          <div className="advice-header">
-            <div className="advice-icon">🌸</div>
-            <h3 className="text-h3">자궁이의 생활 습관 조언</h3>
+      <section className="diary-tips-section" aria-label="생활 팁 추천">
+        <h2 className="diary-tips-heading">생활 팁 추천</h2>
+        <div className="diary-tips-grid">
+          <div className="diary-tip-card diary-tip-card--foods">
+            <ul className="diary-tip-list">
+              <li>🥩 소고기 (철분 보충)</li>
+              <li>🥬 시금치 · 케일</li>
+              <li>🍫 다크초콜릿 (마그네슘)</li>
+            </ul>
           </div>
-          <p className="text-body" style={{ marginTop: 'var(--space-3)', lineHeight: '1.6' }}>
-            해피님, 지금은 <strong>황체기</strong>에 진입했어요. 프로게스테론 분비가 늘어나서 몸이 붓거나 감정 기복이 생길 수 있어요. 오늘은 무리한 운동보다는 가벼운 스트레칭과 따뜻한 차트 한 잔을 추천할게요!
+          <div className="diary-tip-card diary-tip-card--breath">
+            <p>
+              생리통이 있을 때 복식 호흡으로 통증을 줄일 수 있어요. 따뜻한 곳에서 편안하게 해보세요.
+            </p>
+          </div>
+        </div>
+        <div className="diary-tip-card diary-tip-card--wide">
+          <p>
+            지금은 몸이 쉬고 싶어하는 시기예요. 따뜻한 음료와 가벼운 식사로 컨디션을 관리해보세요. 무리하지 말고 오늘은 편안하게 보내요 💛
           </p>
         </div>
+      </section>
 
-        <button className="btn btn-primary-filled save-btn">일기 저장하기</button>
-      </div>
+      {activeModal === 'month' && (
+        <div className="modal-overlay" onClick={() => setActiveModal(null)}>
+          <div className="list-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-scroll-area">
+              {monthOptions.map((opt, i) => {
+                const isActive = tempMonthSelect
+                  ? opt.year === tempMonthSelect.y && opt.month === tempMonthSelect.m
+                  : opt.year === year && opt.month === month;
+                return (
+                  <div
+                    key={`${opt.year}-${opt.month}-${i}`}
+                    className={`modal-list-item ${isActive ? 'active' : ''}`}
+                    onClick={() => {
+                      setTempMonthSelect({ y: opt.year, m: opt.month });
+                      setTimeout(() => {
+                        handleSelectMonth(opt.year, opt.month);
+                        setTempMonthSelect(null);
+                      }, 150);
+                    }}
+                  >
+                    {opt.year}년 {opt.month + 1}월
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

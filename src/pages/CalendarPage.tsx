@@ -294,6 +294,14 @@ export default function CalendarPage() {
   const displayFormDateObj = formDate ? formDate.split('-').map(Number) : [year, month + 1, selectedDay || 1];
   const formDateLabel = `${displayFormDateObj[0]}년 ${displayFormDateObj[1]}월 ${displayFormDateObj[2]}일`;
 
+  const formatEventSummaryLine = (evt: Event) => {
+    const [, m, d] = evt.date.split('-').map(Number);
+    return `${m}월 ${d}일 ${evt.title}`;
+  };
+
+  const formatTimeRangeForModal = (timeRange: string) =>
+    timeRange.replace(/\s*-\s*/g, '~').replace('종일', '종일');
+
   return (
     <div className={`calendar-page ${activeModal ? 'no-scroll' : ''}`}>
       {/* Header */}
@@ -571,45 +579,74 @@ export default function CalendarPage() {
             </div>
           )}
 
-          {/* Form Modal: Delete Confirm */}
-          {activeModal === 'deleteEvent' && (
-            <div className="form-modal confirm-modal" onClick={e => e.stopPropagation()}>
-              <div className="confirm-header">
-                <div></div>
-                <h2 className="confirm-title">일정을 삭제하시겠습니까?</h2>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginLeft: 'auto' }}>
-                  <button className="form-modal-close" onClick={() => setActiveModal(null)} style={{ position: 'relative' }}>
-                    <X size={28} color="#A3AAB2" strokeWidth={1} style={{marginRight: '-4px'}} />
+          {/* Form Modal: Delete Confirm (Figma 캘린더_선택_선택-4) */}
+          {activeModal === 'deleteEvent' && (() => {
+            const evt = events.find((e) => e.id === editingEventId);
+            if (!evt) return null;
+            return (
+              <div className="form-modal figma-confirm-sheet" onClick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  className="figma-confirm-sheet-close"
+                  onClick={() => setActiveModal(null)}
+                  aria-label="닫기"
+                >
+                  <X size={22} color="#A3AAB2" strokeWidth={1.5} />
+                </button>
+                <div className="figma-confirm-sheet-body">
+                  <p className="figma-confirm-sheet-primary">{formatEventSummaryLine(evt)}</p>
+                  <p className="figma-confirm-sheet-secondary">일정을 삭제하시겠습니까?</p>
+                </div>
+                <div className="form-modal-actions figma-confirm-sheet-actions">
+                  <button type="button" className="form-btn-cancel" onClick={() => setActiveModal(null)}>
+                    취소
+                  </button>
+                  <button type="button" className="form-btn-submit" onClick={handleDeleteEvent}>
+                    스케줄 삭제
                   </button>
                 </div>
               </div>
+            );
+          })()}
 
-              <div className="form-modal-actions">
-                <button className="form-btn-cancel" onClick={() => setActiveModal(null)}>취소</button>
-                <button className="form-btn-submit" onClick={handleDeleteEvent}>스케줄 삭제</button>
-              </div>
-            </div>
-          )}
-
-          {/* Form Modal: Apply Rec Event */}
-          {activeModal === 'applyRecEvent' && (
-            <div className="form-modal confirm-modal" onClick={e => e.stopPropagation()}>
-              <div className="confirm-header">
-                <div></div>
-                <h2 className="confirm-title">추천 일정을 적용하시겠습니까?</h2>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginLeft: 'auto' }}>
-                  <button className="form-modal-close" onClick={() => setActiveModal(null)} style={{ position: 'relative' }}>
-                    <X size={28} color="#A3AAB2" strokeWidth={1} style={{marginRight: '-4px'}} />
+          {/* Form Modal: Apply Rec Event (Figma 캘린더_선택_선택-10) */}
+          {activeModal === 'applyRecEvent' && (() => {
+            const evt = events.find((e) => e.id === editingEventId);
+            if (!evt) return null;
+            const oldDisplay = evt.oldTime
+              ? formatTimeRangeForModal(evt.oldTime)
+              : formatTimeRangeForModal(evt.time);
+            const newDisplay = evt.recTime ? formatTimeRangeForModal(evt.recTime) : '';
+            return (
+              <div className="form-modal figma-confirm-sheet" onClick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  className="figma-confirm-sheet-close"
+                  onClick={() => setActiveModal(null)}
+                  aria-label="닫기"
+                >
+                  <X size={22} color="#A3AAB2" strokeWidth={1.5} />
+                </button>
+                <div className="figma-confirm-sheet-body">
+                  <p className="figma-confirm-sheet-primary">{formatEventSummaryLine(evt)}</p>
+                  <p className="figma-confirm-sheet-time-row">
+                    <span className="figma-confirm-time-muted">{oldDisplay}</span>
+                    <span className="figma-confirm-time-arrow">→</span>
+                    <span className="figma-confirm-time-accent">{newDisplay}</span>
+                  </p>
+                  <p className="figma-confirm-sheet-secondary">추천 일정을 적용하시겠습니까?</p>
+                </div>
+                <div className="form-modal-actions figma-confirm-sheet-actions">
+                  <button type="button" className="form-btn-cancel" onClick={() => setActiveModal(null)}>
+                    취소
+                  </button>
+                  <button type="button" className="form-btn-submit" onClick={handleApplyRecEvent}>
+                    스케줄 적용
                   </button>
                 </div>
               </div>
-
-              <div className="form-modal-actions">
-                <button className="form-btn-cancel" onClick={() => setActiveModal(null)}>취소</button>
-                <button className="form-btn-submit" onClick={handleApplyRecEvent}>스케줄 적용</button>
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Form Modal: Start Period */}
           {activeModal === 'startPeriod' && (
