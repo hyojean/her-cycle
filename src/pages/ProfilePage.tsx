@@ -1,7 +1,9 @@
-import { ChevronRight, User } from 'lucide-react';
+import { ChevronRight, User, ChevronLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import './ProfilePage.css';
 
 export default function ProfilePage() {
+  const navigate = useNavigate();
   const profileSettings = [
     { label: '닉네임', value: '해피님' },
     { label: '생년월일 또는 나이', value: '28세' },
@@ -14,6 +16,14 @@ export default function ProfilePage() {
 
   return (
     <div className="profile-container">
+      <div className="page-header">
+        <button type="button" className="back-button" onClick={() => navigate(-1)} aria-label="뒤로">
+          <ChevronLeft size={24} />
+        </button>
+        <h1 className="page-title">마이페이지</h1>
+        <div style={{ width: 24 }} aria-hidden />
+      </div>
+
       <div className="profile-header">
         <div className="profile-avatar">
           <User size={32} />

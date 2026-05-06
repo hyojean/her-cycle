@@ -1,7 +1,9 @@
 import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import './ContentsPage.css';
 
 export default function ContentsPage() {
+  const navigate = useNavigate();
   const recommendedArticles = [
     {
       title: "유기농 생리대 실험 14개 중 12개 자궁 내막 세포 변형",
@@ -27,8 +29,15 @@ export default function ContentsPage() {
 
   return (
     <div className="contents-container">
+      <div className="page-header">
+        <button type="button" className="back-button" onClick={() => navigate(-1)} aria-label="뒤로">
+          <ChevronLeft size={24} />
+        </button>
+        <h1 className="page-title">콘텐츠</h1>
+        <div style={{ width: 24 }} aria-hidden />
+      </div>
+
       <div className="contents-header">
-        <h1 className="text-h2">콘텐츠</h1>
         <div className="contents-search-wrapper">
           <Search className="contents-search-icon" size={18} />
           <input 

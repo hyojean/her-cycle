@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { ChevronLeft, ChevronDown, CheckCircle2, Plus, ChevronRight, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import './CalendarPage.css';
 import heroIcon from '../assets/calendar_hero_3d_icon.png';
 import { getFullCalendarDays, formatDateString } from '../utils/date';
@@ -97,6 +98,7 @@ const getCycleForDate = (year: number, month: number, day: number, records: Peri
 };
 
 export default function CalendarPage() {
+  const navigate = useNavigate();
   const [currentDate, setCurrentDate] = useState(new Date(2026, 3, 1));
   const [selectedDay, setSelectedDay] = useState<number | null>(10);
   const [isGoogleLinked, setIsGoogleLinked] = useState<boolean>(false);
@@ -306,7 +308,9 @@ export default function CalendarPage() {
     <div className={`calendar-page ${activeModal ? 'no-scroll' : ''}`}>
       {/* Header */}
       <div className="page-header">
-        <button className="back-button"><ChevronLeft size={24} /></button>
+        <button type="button" className="back-button" onClick={() => navigate(-1)} aria-label="뒤로">
+          <ChevronLeft size={24} />
+        </button>
         <h1 className="page-title">월별 스케줄 관리</h1>
         <div style={{ width: 24 }} />
       </div>

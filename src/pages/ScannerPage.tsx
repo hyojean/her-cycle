@@ -1,11 +1,21 @@
-import { Search, Camera, Image as ImageIcon, ChevronRight } from 'lucide-react';
+import { Search, Camera, Image as ImageIcon, ChevronRight, ChevronLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import './ScannerPage.css';
 
 export default function ScannerPage() {
+  const navigate = useNavigate();
+
   return (
     <div className="scanner-container">
+      <div className="page-header">
+        <button type="button" className="back-button" onClick={() => navigate(-1)} aria-label="뒤로">
+          <ChevronLeft size={24} />
+        </button>
+        <h1 className="page-title">성분 분석 스캐너</h1>
+        <div style={{ width: 24 }} aria-hidden />
+      </div>
+
       <div className="scanner-header">
-        <h1 className="text-h1">성분 분석 스캐너</h1>
         <p className="text-body">제품의 호르몬 유해도를 빠르게 확인하세요.</p>
       </div>
 

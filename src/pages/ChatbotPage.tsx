@@ -1,7 +1,9 @@
-import { Send } from 'lucide-react';
+import { Send, ChevronLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import './ChatbotPage.css';
 
 export default function ChatbotPage() {
+  const navigate = useNavigate();
   const suggestedQuestions = [
     "생리통이 심한데 진통제 먹어도 될까요?",
     "생리 주기가 점점 불규칙해져요.",
@@ -11,8 +13,15 @@ export default function ChatbotPage() {
 
   return (
     <div className="chat-container">
+      <div className="page-header">
+        <button type="button" className="back-button" onClick={() => navigate(-1)} aria-label="뒤로">
+          <ChevronLeft size={24} />
+        </button>
+        <h1 className="page-title">채팅</h1>
+        <div style={{ width: 24 }} aria-hidden />
+      </div>
+
       <div className="chat-header">
-        <h1 className="text-h2">자궁이</h1>
         <div className="disclaimer-banner">
           ⚠️ 제공되는 답변은 의학적 효력이 없으며, 전문의의 진단을 대체하지 않습니다.
         </div>

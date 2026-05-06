@@ -10,7 +10,7 @@ export default function RootLayout() {
     { path: '/diary', icon: Book, label: '일기' },
     { path: '/contents', icon: FileText, label: '콘텐츠' },
     { path: '/scanner', icon: Scan, label: '스캐너' },
-    { path: '/chatbot', icon: MessageCircle, label: '챗봇' },
+    { path: '/chatbot', icon: MessageCircle, label: '채팅' },
     { path: '/profile', icon: User, label: '마이' },
   ];
 
