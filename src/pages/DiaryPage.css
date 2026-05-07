@@ -287,6 +287,29 @@
   align-items: center;
   gap: 12px;
   background: #ffffff;
+  cursor: default;
+  border-radius: 12px;
+  padding: 6px 4px 6px 0;
+  box-sizing: border-box;
+  transition: background-color 0.15s ease;
+}
+
+.diary-log-row.is-clickable {
+  cursor: pointer;
+}
+
+.diary-log-row.is-clickable:hover {
+  background-color: #fafbfc;
+}
+
+.diary-log-row.is-expanded {
+  align-items: stretch;
+  cursor: default;
+  background-color: #ffffff;
+}
+
+.diary-log-row.is-expanded:hover {
+  background-color: #ffffff;
 }
 
 .diary-log-accent {
@@ -295,6 +318,14 @@
   flex-shrink: 0;
   border-radius: 999px;
   background: #ffc0cb;
+  align-self: center;
+  transition: min-height 0.2s ease, height 0.2s ease;
+}
+
+.diary-log-row.is-expanded .diary-log-accent {
+  align-self: stretch;
+  height: auto;
+  min-height: 120px;
 }
 
 .diary-log-row--note .diary-log-accent {
@@ -318,6 +349,61 @@
   line-height: 1.45;
   margin: 0;
   word-break: keep-all;
+}
+
+.diary-log-row:not(.is-expanded) .diary-log-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.diary-log-row--note:not(.is-expanded) .diary-log-title {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diary-log-row.is-expanded .diary-log-title {
+  display: block;
+  overflow: visible;
+  white-space: normal;
+}
+
+.diary-log-edit-textarea {
+  width: 100%;
+  border: none;
+  background: #f1f3f5;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #000000;
+  resize: vertical;
+  min-height: 120px;
+  outline: none;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.diary-log-expand-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 2px;
+}
+
+/* 일기 삭제 확인 모달 — 일기 본문(주요 문구)만 글자 크기 소폭 축소 */
+.diary-page .diary-delete-confirm-sheet .figma-confirm-sheet-primary {
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.diary-page .diary-delete-confirm-sheet .figma-confirm-sheet-secondary {
+  margin-top: 10px;
 }
 
 .diary-log-time {

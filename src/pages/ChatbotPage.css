@@ -50,11 +50,10 @@
 }
 
 .disclaimer-banner {
-  background-color: var(--surface-gray-alt);
+  background-color: transparent;
   color: var(--text-secondary);
   font-size: 11px;
   padding: var(--space-2) var(--space-4);
-  border-radius: var(--rad-sm);
   text-align: center;
   width: 100%;
 }
@@ -76,6 +75,7 @@
 
 .chat-bubble-wrapper.bot {
   align-self: flex-start;
+  align-items: flex-start;
 }
 
 .chat-bubble-wrapper.user {
@@ -84,15 +84,20 @@
 }
 
 .bot-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background-color: var(--primary-light);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
   flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  align-self: flex-start;
+}
+
+.bot-avatar-img {
+  height: 52px;
+  width: auto;
+  max-width: 72px;
+  object-fit: contain;
+  display: block;
+  mix-blend-mode: multiply;
+  filter: contrast(1.1) brightness(1.1);
 }
 
 .chat-bubble {
@@ -131,8 +136,8 @@
 .suggestion-pill {
   white-space: nowrap;
   background-color: white;
-  border: 1px solid var(--primary-color);
-  color: var(--primary-color);
+  border: 1px solid #ffd6e4;
+  color: #ffa3c2;
   padding: 8px 14px;
   border-radius: 20px;
   font-size: 13px;

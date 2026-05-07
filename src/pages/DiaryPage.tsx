@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronDown } from 'lucide-react';
+import { ChevronLeft, ChevronDown, X } from 'lucide-react';
 import './CalendarPage.css';
 import './HomePage.css';
 import './DiaryPage.css';
@@ -43,7 +43,7 @@ type LogEntry = {
   variant: 'activity' | 'note';
 };
 
-const LOGS_BY_DATE: Record<string, LogEntry[]> = {
+const INITIAL_LOGS_BY_DATE: Record<string, LogEntry[]> = {
   '2026-04-09': [
     {
       id: '1',
@@ -59,15 +59,21 @@ const LOGS_BY_DATE: Record<string, LogEntry[]> = {
     },
     {
       id: '3',
-      title: '내 기분을 잘 모르겠고 복통이 조금 있어서 일에 집중이 안되었음...',
+      title: '나도 내 기분을 잘 모르겠음. 복통이 조금 있어서 일에 집중이 잘 안되었음. 복통이 아니라 허리가 끊어질 듯한 통증인 듯 싶기도?',
       timeLabel: '오후 1시 14분',
       variant: 'note',
     },
   ],
 };
 
-/** 일기가 기록된 날짜에만 캘린더에 점 표시 (현재 목 데이터) */
-const DOT_DATES = new Set(['2026-04-09']);
+function cloneLogsByDate(src: Record<string, LogEntry[]>): Record<string, LogEntry[]> {
+  const out: Record<string, LogEntry[]> = {};
+  for (const [k, arr] of Object.entries(src)) {
+    out[k] = arr.map((e) => ({ ...e }));
+  }
+  return out;
+}
+const DIARY_VIEW_MODE_KEY = 'diary:viewMode';
 
 function getWeekDatesContaining(year: number, month: number, day: number): Date[] {
   const anchor = new Date(year, month, day);
@@ -83,12 +89,22 @@ function getWeekDatesContaining(year: number, month: number, day: number): Date[
 
 export default function DiaryPage() {
   const navigate = useNavigate();
-  const [viewMode, setViewMode] = useState<'week' | 'month'>('month');
+  const [viewMode, setViewMode] = useState<'week' | 'month'>(() => {
+    const savedMode = localStorage.getItem(DIARY_VIEW_MODE_KEY);
+    return savedMode === 'week' || savedMode === 'month' ? savedMode : 'month';
+  });
   const [currentDate, setCurrentDate] = useState(new Date(2026, 3, 1));
   const [selectedDay, setSelectedDay] = useState<number | null>(9);
   const [diaryText, setDiaryText] = useState('');
-  const [activeModal, setActiveModal] = useState<'month' | null>(null);
+  const [logsByDate, setLogsByDate] = useState<Record<string, LogEntry[]>>(() => cloneLogsByDate(INITIAL_LOGS_BY_DATE));
+  const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState('');
+  const [expandableActivityIds, setExpandableActivityIds] = useState<Set<string>>(new Set());
+  const [activeModal, setActiveModal] = useState<'month' | 'deleteDiary' | null>(null);
+  const [pendingDeleteLogId, setPendingDeleteLogId] = useState<string | null>(null);
   const [tempMonthSelect, setTempMonthSelect] = useState<{ y: number; m: number } | null>(null);
+  const activityTitleRefs = useRef<Record<string, HTMLParagraphElement | null>>({});
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -112,13 +128,49 @@ export default function DiaryPage() {
     }
   }, [activeModal]);
 
+  useEffect(() => {
+    localStorage.setItem(DIARY_VIEW_MODE_KEY, viewMode);
+  }, [viewMode]);
+
   const effectiveDay = selectedDay ?? 1;
   const weekDates = useMemo(
     () => getWeekDatesContaining(year, month, effectiveDay),
     [year, month, effectiveDay]
   );
   const selectedDateStr = formatDateString(year, month, effectiveDay);
-  const dayLogs = LOGS_BY_DATE[selectedDateStr] ?? [];
+  const dayLogs = logsByDate[selectedDateStr] ?? [];
+
+  const dotDates = useMemo(() => {
+    const s = new Set<string>();
+    for (const [d, logs] of Object.entries(logsByDate)) {
+      if (logs.length > 0) s.add(d);
+    }
+    return s;
+  }, [logsByDate]);
+
+  useEffect(() => {
+    setSelectedLogId(null);
+    setEditingLogId(null);
+    setEditDraft('');
+    setPendingDeleteLogId(null);
+    setActiveModal(null);
+  }, [selectedDateStr]);
+
+  useEffect(() => {
+    const next = new Set<string>();
+    dayLogs.forEach((log) => {
+      if (log.variant !== 'activity') return;
+      const el = activityTitleRefs.current[log.id];
+      if (!el) return;
+      const computedLineHeight = parseFloat(window.getComputedStyle(el).lineHeight || '0');
+      if (!computedLineHeight) return;
+      const maxSingleLineHeight = computedLineHeight + 1;
+      if (el.scrollHeight > maxSingleLineHeight) {
+        next.add(log.id);
+      }
+    });
+    setExpandableActivityIds(next);
+  }, [dayLogs, selectedDateStr]);
 
   const weekdayLabel = WEEKDAYS[new Date(year, month, effectiveDay).getDay()];
 
@@ -140,6 +192,25 @@ export default function DiaryPage() {
     d.getDate() === selectedDay;
 
   const weekSelectedPhase = getPhaseForCell(year, month, effectiveDay, true);
+
+  const formatDiaryDeletePrimary = (log: LogEntry) =>
+    `${month + 1}월 ${effectiveDay}일 ${log.title}`;
+
+  const handleConfirmDeleteDiary = () => {
+    if (!pendingDeleteLogId) return;
+    setLogsByDate((prev) => {
+      const list = (prev[selectedDateStr] ?? []).filter((x) => x.id !== pendingDeleteLogId);
+      const next = { ...prev };
+      if (list.length === 0) delete next[selectedDateStr];
+      else next[selectedDateStr] = list;
+      return next;
+    });
+    setSelectedLogId(null);
+    setEditingLogId(null);
+    setEditDraft('');
+    setPendingDeleteLogId(null);
+    setActiveModal(null);
+  };
 
   return (
     <div className={`diary-page${activeModal ? ' diary-page--modal-open' : ''}`}>
@@ -232,7 +303,7 @@ export default function DiaryPage() {
                 const isSelected =
                   isCurrentMonth && selectedDay !== null && selectedDay === dayObj.day;
                 const iterDateStr = formatDateString(cellYear, cellMonth, dayObj.day);
-                const hasDot = DOT_DATES.has(iterDateStr);
+                const hasDot = dotDates.has(iterDateStr);
 
                 let radiusClass = '';
                 if (cycle && isCurrentMonth && cellYear === 2026 && cellMonth === 3) {
@@ -326,18 +397,113 @@ export default function DiaryPage() {
         {dayLogs.length === 0 ? (
           <p className="diary-log-empty">이 날짜에 등록된 일정이 없어요.</p>
         ) : (
-          dayLogs.map((log) => (
-            <article
-              key={log.id}
-              className={`diary-log-row diary-log-row--${log.variant}`}
-            >
-              <span className="diary-log-accent" aria-hidden />
-              <div className="diary-log-body">
-                <p className="diary-log-title">{log.title}</p>
-                <p className="diary-log-time">{log.timeLabel}</p>
-              </div>
-            </article>
-          ))
+          dayLogs.map((log) => {
+            const expanded = selectedLogId === log.id;
+            const isEditing = editingLogId === log.id;
+            const canExpand = log.variant === 'note' || expandableActivityIds.has(log.id);
+            return (
+              <article
+                key={log.id}
+                className={`diary-log-row diary-log-row--${log.variant}${expanded ? ' is-expanded' : ''}${canExpand ? ' is-clickable' : ''}`}
+                onClick={() => {
+                  if (editingLogId === log.id) return;
+                  if (!canExpand) return;
+                  setSelectedLogId((prev) => (prev === log.id ? null : log.id));
+                  setEditingLogId(null);
+                  setEditDraft('');
+                }}
+                aria-expanded={expanded}
+              >
+                <span className="diary-log-accent" aria-hidden />
+                <div className="diary-log-body">
+                  {isEditing ? (
+                    <textarea
+                      className="diary-log-edit-textarea"
+                      value={editDraft}
+                      onChange={(e) => setEditDraft(e.target.value)}
+                      rows={5}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  ) : (
+                    <p
+                      ref={(el) => {
+                        if (log.variant === 'activity') {
+                          activityTitleRefs.current[log.id] = el;
+                        }
+                      }}
+                      className="diary-log-title"
+                    >
+                      {log.title}
+                    </p>
+                  )}
+                  <p className="diary-log-time">{log.timeLabel}</p>
+                  {expanded && log.variant === 'note' ? (
+                    <div className="diary-log-expand-actions" onClick={(e) => e.stopPropagation()}>
+                      {isEditing ? (
+                        <>
+                          <button
+                            type="button"
+                            className="diary-mini-btn diary-mini-btn--secondary"
+                            onClick={() => {
+                              setEditingLogId(null);
+                              setEditDraft('');
+                            }}
+                          >
+                            취소
+                          </button>
+                          <button
+                            type="button"
+                            className="diary-mini-btn diary-mini-btn--primary"
+                            onClick={() => {
+                              const next = editDraft.trim();
+                              if (!next) {
+                                alert('내용을 입력해주세요.');
+                                return;
+                              }
+                              setLogsByDate((prev) => {
+                                const list = [...(prev[selectedDateStr] ?? [])];
+                                const i = list.findIndex((x) => x.id === log.id);
+                                if (i === -1) return prev;
+                                list[i] = { ...list[i], title: next };
+                                return { ...prev, [selectedDateStr]: list };
+                              });
+                              setEditingLogId(null);
+                              setEditDraft('');
+                            }}
+                          >
+                            저장
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="diary-mini-btn diary-mini-btn--secondary"
+                            onClick={() => {
+                              setEditingLogId(log.id);
+                              setEditDraft(log.title);
+                            }}
+                          >
+                            수정
+                          </button>
+                          <button
+                            type="button"
+                            className="diary-mini-btn diary-mini-btn--primary"
+                            onClick={() => {
+                              setPendingDeleteLogId(log.id);
+                              setActiveModal('deleteDiary');
+                            }}
+                          >
+                            삭제
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              </article>
+            );
+          })
         )}
       </section>
 
@@ -387,32 +553,84 @@ export default function DiaryPage() {
         </div>
       </section>
 
-      {activeModal === 'month' && (
-        <div className="modal-overlay" onClick={() => setActiveModal(null)}>
-          <div className="list-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-scroll-area">
-              {monthOptions.map((opt, i) => {
-                const isActive = tempMonthSelect
-                  ? opt.year === tempMonthSelect.y && opt.month === tempMonthSelect.m
-                  : opt.year === year && opt.month === month;
-                return (
-                  <div
-                    key={`${opt.year}-${opt.month}-${i}`}
-                    className={`modal-list-item ${isActive ? 'active' : ''}`}
-                    onClick={() => {
-                      setTempMonthSelect({ y: opt.year, m: opt.month });
-                      setTimeout(() => {
-                        handleSelectMonth(opt.year, opt.month);
-                        setTempMonthSelect(null);
-                      }, 150);
-                    }}
-                  >
-                    {opt.year}년 {opt.month + 1}월
-                  </div>
-                );
-              })}
+      {activeModal && (
+        <div
+          className="modal-overlay"
+          onClick={() => {
+            setActiveModal(null);
+            setPendingDeleteLogId(null);
+          }}
+        >
+          {activeModal === 'month' && (
+            <div className="list-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-scroll-area">
+                {monthOptions.map((opt, i) => {
+                  const isActive = tempMonthSelect
+                    ? opt.year === tempMonthSelect.y && opt.month === tempMonthSelect.m
+                    : opt.year === year && opt.month === month;
+                  return (
+                    <div
+                      key={`${opt.year}-${opt.month}-${i}`}
+                      className={`modal-list-item ${isActive ? 'active' : ''}`}
+                      onClick={() => {
+                        setTempMonthSelect({ y: opt.year, m: opt.month });
+                        setTimeout(() => {
+                          handleSelectMonth(opt.year, opt.month);
+                          setTempMonthSelect(null);
+                        }, 150);
+                      }}
+                    >
+                      {opt.year}년 {opt.month + 1}월
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
+
+          {activeModal === 'deleteDiary' &&
+            pendingDeleteLogId &&
+            (() => {
+              const logToDelete = (logsByDate[selectedDateStr] ?? []).find((l) => l.id === pendingDeleteLogId);
+              if (!logToDelete || logToDelete.variant !== 'note') return null;
+              return (
+                <div
+                  className="form-modal figma-confirm-sheet diary-delete-confirm-sheet"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    className="figma-confirm-sheet-close"
+                    onClick={() => {
+                      setActiveModal(null);
+                      setPendingDeleteLogId(null);
+                    }}
+                    aria-label="닫기"
+                  >
+                    <X size={22} color="#A3AAB2" strokeWidth={1.5} />
+                  </button>
+                  <div className="figma-confirm-sheet-body">
+                    <p className="figma-confirm-sheet-primary">{formatDiaryDeletePrimary(logToDelete)}</p>
+                    <p className="figma-confirm-sheet-secondary">일기를 삭제하시겠습니까?</p>
+                  </div>
+                  <div className="form-modal-actions figma-confirm-sheet-actions">
+                    <button
+                      type="button"
+                      className="form-btn-cancel"
+                      onClick={() => {
+                        setActiveModal(null);
+                        setPendingDeleteLogId(null);
+                      }}
+                    >
+                      취소
+                    </button>
+                    <button type="button" className="form-btn-submit" onClick={handleConfirmDeleteDiary}>
+                      일기 삭제
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
         </div>
       )}
     </div>

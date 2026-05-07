@@ -1,9 +1,19 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { ChevronLeft, ChevronDown, CheckCircle2, Plus, ChevronRight, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import './CalendarPage.css';
 import heroIcon from '../assets/calendar_hero_3d_icon.png';
 import { getFullCalendarDays, formatDateString } from '../utils/date';
+import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
+import { ensureSupabaseSession } from '../lib/supabaseAuth';
+import {
+  deleteSchedule,
+  fetchSchedules,
+  insertSchedule,
+  scheduleRowToEvent,
+  updateSchedule,
+  type CalendarEventInput,
+} from '../services/schedules';
 
 type Event = {
   id: number | string;
@@ -97,12 +107,28 @@ const getCycleForDate = (year: number, month: number, day: number, records: Peri
   return null;
 };
 
+function buildScheduleInput(
+  partial: { title: string; date: string; time: string },
+  existing?: Event
+): CalendarEventInput {
+  return {
+    title: partial.title,
+    date: partial.date,
+    time: partial.time,
+    hasRec: existing?.hasRec ?? false,
+    oldTime: existing?.oldTime,
+    recTime: existing?.recTime,
+    recDesc: existing?.recDesc,
+  };
+}
+
 export default function CalendarPage() {
   const navigate = useNavigate();
+  const remoteEnabled = isSupabaseConfigured();
   const [currentDate, setCurrentDate] = useState(new Date(2026, 3, 1));
   const [selectedDay, setSelectedDay] = useState<number | null>(10);
   const [isGoogleLinked, setIsGoogleLinked] = useState<boolean>(false);
-  const [events, setEvents] = useState<Event[]>(INITIAL_EVENTS);
+  const [events, setEvents] = useState<Event[]>(() => (remoteEnabled ? [] : INITIAL_EVENTS));
   const [periodRecords, setPeriodRecords] = useState<PeriodRecord[]>([
     { start: '2026-04-09', end: null } // The initial baseline mock
   ]);
@@ -139,6 +165,48 @@ export default function CalendarPage() {
       }, 10);
     }
   }, [activeModal]);
+
+  const reloadSchedules = useCallback(async () => {
+    const sb = getSupabase();
+    if (!sb || !remoteEnabled) return;
+    try {
+      await ensureSupabaseSession(sb);
+      const { data, error } = await fetchSchedules(sb);
+      if (error) {
+        console.error(error);
+        return;
+      }
+      setEvents((data ?? []).map(scheduleRowToEvent));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [remoteEnabled]);
+
+  useEffect(() => {
+    if (!remoteEnabled) return;
+    let cancelled = false;
+    (async () => {
+      const sb = getSupabase();
+      if (!sb) return;
+      try {
+        await ensureSupabaseSession(sb);
+        const { data, error } = await fetchSchedules(sb);
+        if (cancelled) return;
+        if (error) {
+          console.error(error);
+          setEvents([]);
+          return;
+        }
+        setEvents((data ?? []).map(scheduleRowToEvent));
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setEvents([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [remoteEnabled]);
 
   const selectedDateStr = selectedDay ? formatDateString(year, month, selectedDay) : '';
   const isStartDate = periodRecords.some(r => r.start === selectedDateStr);
@@ -213,8 +281,38 @@ export default function CalendarPage() {
     setActiveModal('applyRecEvent');
   };
 
-  const handleApplyRecEvent = () => {
-    setEvents(events.map(e => e.id === editingEventId && e.recTime ? { ...e, time: e.recTime, hasRec: false } : e));
+  const handleApplyRecEvent = async () => {
+    const evt = events.find((e) => e.id === editingEventId);
+    if (!evt?.recTime) {
+      setActiveModal(null);
+      return;
+    }
+
+    const sb = getSupabase();
+    if (sb && remoteEnabled) {
+      try {
+        await ensureSupabaseSession(sb);
+        const { error } = await updateSchedule(sb, Number(evt.id), {
+          title: evt.title,
+          date: evt.date,
+          time: evt.recTime,
+          hasRec: false,
+          oldTime: evt.oldTime,
+          recTime: evt.recTime,
+          recDesc: evt.recDesc,
+        });
+        if (error) throw error;
+        await reloadSchedules();
+        setActiveModal(null);
+      } catch (e) {
+        alert(e instanceof Error ? e.message : '추천 일정을 적용하지 못했습니다.');
+      }
+      return;
+    }
+
+    setEvents(
+      events.map((e) => (e.id === editingEventId && e.recTime ? { ...e, time: e.recTime, hasRec: false } : e))
+    );
     setActiveModal(null);
   };
 
@@ -262,33 +360,82 @@ export default function CalendarPage() {
     setActiveModal(null);
   };
 
-  const handleSubmitEvent = () => {
+  const handleSubmitEvent = async () => {
     if (!formTitle.trim()) {
       alert('일정 내용을 입력해주세요.');
       return;
     }
-    
-    const finalTime = (formTimeStart && formTimeEnd) ? `${formTimeStart} - ${formTimeEnd}` : '종일';
+
+    const finalTime = formTimeStart && formTimeEnd ? `${formTimeStart} - ${formTimeEnd}` : '종일';
+    const existing = activeModal === 'editEvent' ? events.find((e) => e.id === editingEventId) : undefined;
+    const input = buildScheduleInput({ title: formTitle.trim(), date: formDate, time: finalTime }, existing);
+
+    const sb = getSupabase();
+    if (sb && remoteEnabled) {
+      try {
+        await ensureSupabaseSession(sb);
+        const {
+          data: { user },
+        } = await sb.auth.getUser();
+        if (!user) throw new Error('로그인 세션이 없습니다.');
+
+        if (activeModal === 'addEvent') {
+          const { error } = await insertSchedule(sb, user.id, input);
+          if (error) throw error;
+        } else if (activeModal === 'editEvent' && editingEventId != null) {
+          const idNum = Number(editingEventId);
+          if (!Number.isFinite(idNum)) throw new Error('잘못된 일정입니다.');
+          const { error } = await updateSchedule(sb, idNum, input);
+          if (error) throw error;
+        }
+        await reloadSchedules();
+        setActiveModal(null);
+      } catch (e) {
+        alert(e instanceof Error ? e.message : '일정을 저장하지 못했습니다.');
+      }
+      return;
+    }
 
     if (activeModal === 'addEvent') {
       const newEvent: Event = {
         id: Date.now(),
-        title: formTitle,
+        title: formTitle.trim(),
         time: finalTime,
         date: formDate,
         hasRec: false,
       };
       setEvents([...events, newEvent]);
     } else if (activeModal === 'editEvent' && editingEventId) {
-      setEvents(events.map(e => e.id === editingEventId ? { ...e, title: formTitle, time: finalTime, date: formDate } : e));
+      setEvents(
+        events.map((e) => (e.id === editingEventId ? { ...e, title: formTitle.trim(), time: finalTime, date: formDate } : e))
+      );
     }
     setActiveModal(null);
   };
 
-  const handleDeleteEvent = () => {
-    if (editingEventId) {
-      setEvents(events.filter(e => e.id !== editingEventId));
+  const handleDeleteEvent = async () => {
+    if (editingEventId == null) {
+      setActiveModal(null);
+      return;
     }
+
+    const sb = getSupabase();
+    if (sb && remoteEnabled) {
+      try {
+        await ensureSupabaseSession(sb);
+        const idNum = Number(editingEventId);
+        if (!Number.isFinite(idNum)) throw new Error('잘못된 일정입니다.');
+        const { error } = await deleteSchedule(sb, idNum);
+        if (error) throw error;
+        await reloadSchedules();
+        setActiveModal(null);
+      } catch (e) {
+        alert(e instanceof Error ? e.message : '일정을 삭제하지 못했습니다.');
+      }
+      return;
+    }
+
+    setEvents(events.filter((e) => e.id !== editingEventId));
     setActiveModal(null);
   };
 

@@ -23,13 +23,15 @@ export default function ChatbotPage() {
 
       <div className="chat-header">
         <div className="disclaimer-banner">
-          ⚠️ 제공되는 답변은 의학적 효력이 없으며, 전문의의 진단을 대체하지 않습니다.
+          제공되는 답변은 의학적 효력이 없으며, 전문의의 진단을 대체하지 않습니다.
         </div>
       </div>
 
       <div className="chat-history">
         <div className="chat-bubble-wrapper bot">
-          <div className="bot-avatar">🌸</div>
+          <div className="bot-avatar">
+            <img src="/images/character_uterus.png" alt="자궁이" className="bot-avatar-img" />
+          </div>
           <div className="chat-bubble">
             안녕하세요 해피님! 자궁이에요.<br/>
             오늘 컨디션은 어떠신가요?<br/>
