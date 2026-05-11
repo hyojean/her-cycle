@@ -1,7 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { toCalendarDateString } from '../utils/date';
+
+/** DB가 bigint면 number, UUID면 string으로 내려올 수 있음 */
+export type ScheduleId = string | number;
 
 export type ScheduleRow = {
-  id: number;
+  id: ScheduleId;
   user_id: string | null;
   title: string;
   date: string;
@@ -25,7 +29,7 @@ export type CalendarEventInput = {
 function rowToInput(row: ScheduleRow): CalendarEventInput {
   return {
     title: row.title,
-    date: row.date,
+    date: toCalendarDateString(row.date),
     time: row.time ?? '종일',
     hasRec: row.has_rec,
     oldTime: row.old_time ?? undefined,
@@ -35,7 +39,7 @@ function rowToInput(row: ScheduleRow): CalendarEventInput {
 }
 
 export function scheduleRowToEvent(row: ScheduleRow): {
-  id: number;
+  id: ScheduleId;
   title: string;
   time: string;
   date: string;
@@ -46,6 +50,15 @@ export function scheduleRowToEvent(row: ScheduleRow): {
 } {
   const base = rowToInput(row);
   return { id: row.id, ...base };
+}
+
+export function assertValidScheduleId(id: unknown): ScheduleId {
+  if (typeof id === 'number') {
+    if (!Number.isFinite(id)) throw new Error('잘못된 일정입니다.');
+    return id;
+  }
+  if (typeof id === 'string' && id.trim().length > 0) return id.trim();
+  throw new Error('잘못된 일정입니다.');
 }
 
 function eventToRowPayload(
@@ -85,7 +98,7 @@ export async function insertSchedule(supabase: SupabaseClient, userId: string, i
 
 export async function updateSchedule(
   supabase: SupabaseClient,
-  id: number,
+  id: ScheduleId,
   input: CalendarEventInput
 ) {
   const { data, error } = await supabase
@@ -107,7 +120,7 @@ export async function updateSchedule(
   return { data: data as ScheduleRow, error: null };
 }
 
-export async function deleteSchedule(supabase: SupabaseClient, id: number) {
+export async function deleteSchedule(supabase: SupabaseClient, id: ScheduleId) {
   const { error } = await supabase.from('schedules').delete().eq('id', id);
   return { error };
 }

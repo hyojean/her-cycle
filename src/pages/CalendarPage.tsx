@@ -1,115 +1,27 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { ChevronLeft, ChevronDown, CheckCircle2, Plus, ChevronRight, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import './CalendarPage.css';
 import heroIcon from '../assets/calendar_hero_3d_icon.png';
 import { getFullCalendarDays, formatDateString } from '../utils/date';
-import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
+import { calendarAddDays, getCyclePhaseForCalendarDay } from '../utils/cycleCalendar';
+import { useCalendarData, type CalendarScheduleEvent } from '../context/CalendarDataContext';
+import { getSupabase } from '../lib/supabase';
 import { ensureSupabaseSession } from '../lib/supabaseAuth';
 import {
+  assertValidScheduleId,
   deleteSchedule,
-  fetchSchedules,
   insertSchedule,
-  scheduleRowToEvent,
   updateSchedule,
   type CalendarEventInput,
 } from '../services/schedules';
-
-type Event = {
-  id: number | string;
-  title: string;
-  time: string;
-  date: string;
-  hasRec: boolean;
-  oldTime?: string;
-  recTime?: string;
-  recDesc?: string;
-};
-
-// Initial realistic data reflecting mockups
-const INITIAL_EVENTS: Event[] = [
-  { 
-    id: 1, 
-    title: '새벽 등산 3km 왕복 러닝', 
-    time: '04:00 - 05:00', 
-    date: '2026-04-10',
-    hasRec: true, 
-    oldTime: '04:00 - 05:00', 
-    recTime: '14:00 - 15:00', 
-    recDesc: '현재 생리기 상태로 새벽 시간 격한 활동은 생체 리듬에 좋지 않아요. 낮 시간대로 변경하시길 추천드려요. 재택 중이시니 낮 시간대가 불가능하시다면, 새벽 보다는 저녁 시간대가 더 낫습니다.' 
-  },
-  { 
-    id: 2, 
-    title: '프로젝트 헤이밀리 영화 관람', 
-    time: '21:00 - 23:00', 
-    date: '2026-04-10',
-    hasRec: true, 
-    oldTime: '21:00 - 23:00', 
-    recTime: '19:00 - 21:00', 
-    recDesc: '현재 생리기 상태로 일찍 취침하는 것이 호르몬 안정에 큰 도움이 돼요. 변경이 가능하시다면 두 시간만 일찍 관람하는 건 어떠신가요?' 
-  },
-  { 
-    id: 3, 
-    title: 'Women In Vibe Coding 특강', 
-    time: '18:00 - 19:00', 
-    date: '2026-04-11',
-    hasRec: false, 
-    recDesc: '난포기에 진입하는 날이므로 특강 듣기 좋은 날씨와 시간대입니다. 다음 날 일정 3개가 몰려 있어 너무 무리하지는 마세요.' 
-  },
-];
+import type { PostgrestError } from '@supabase/supabase-js';
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
-type PeriodRecord = {
-  start: string;
-  end: string | null;
-};
-
-const getCycleForDate = (year: number, month: number, day: number, records: PeriodRecord[]) => {
-  if (records.length === 0) return null;
-  
-  const tDate = new Date(year, month, day);
-  
-  const sorted = [...records].sort((a,b) => {
-    const [ay, am, ad] = a.start.split('-').map(Number);
-    const [by, bm, bd] = b.start.split('-').map(Number);
-    return new Date(by, bm-1, bd).getTime() - new Date(ay, am-1, ad).getTime();
-  });
-  
-  const latestLog = sorted.find(r => {
-    const [ry, rm, rd] = r.start.split('-').map(Number);
-    return new Date(ry, rm-1, rd) <= tDate;
-  });
-  
-  if (!latestLog) return null; 
-
-  const [sy, sm, sd] = latestLog.start.split('-').map(Number);
-  const startDate = new Date(sy, sm-1, sd);
-  
-  const diffTime = tDate.getTime() - startDate.getTime();
-  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-  
-  const cycleDay = diffDays % 28;
-
-  if (latestLog.end) {
-    const [ey, em, ed] = latestLog.end.split('-').map(Number);
-    const endDate = new Date(ey, em-1, ed);
-    if (tDate >= startDate && tDate <= endDate) return 'menstruation';
-    if (diffDays >= 28 && cycleDay <= 4) return 'menstruation'; 
-  } else {
-    // 5 day average when no explicit end
-    if (cycleDay >= 0 && cycleDay <= 4) return 'menstruation';
-  }
-
-  if (cycleDay >= 5 && cycleDay <= 10) return 'follicular'; 
-  if (cycleDay >= 11 && cycleDay <= 17) return 'ovulation'; 
-  if (cycleDay >= 18 && cycleDay <= 27) return 'luteal'; 
-  return null;
-};
-
 function buildScheduleInput(
   partial: { title: string; date: string; time: string },
-  existing?: Event
+  existing?: CalendarScheduleEvent
 ): CalendarEventInput {
   return {
     title: partial.title,
@@ -122,22 +34,42 @@ function buildScheduleInput(
   };
 }
 
+function formatSupabaseError(error: unknown, fallback: string): string {
+  if (error && typeof error === 'object') {
+    const e = error as Partial<PostgrestError> & { message?: string };
+    const parts = [e.message, e.details, e.hint, e.code].filter(Boolean);
+    if (parts.length > 0) return parts.join(' | ');
+  }
+  if (error instanceof Error) return error.message;
+  return fallback;
+}
+
 export default function CalendarPage() {
   const navigate = useNavigate();
-  const remoteEnabled = isSupabaseConfigured();
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 3, 1));
-  const [selectedDay, setSelectedDay] = useState<number | null>(10);
+  const {
+    periodRecords,
+    setPeriodRecords,
+    scheduleEvents: events,
+    setScheduleEvents: setEvents,
+    reloadSchedules,
+    remoteEnabled,
+    remoteScheduleStatus: remoteStatus,
+  } = useCalendarData();
+  const [currentDate, setCurrentDate] = useState(() => {
+    const t = new Date();
+    return new Date(t.getFullYear(), t.getMonth(), 1);
+  });
+  const [selectedDay, setSelectedDay] = useState<number | null>(() => new Date().getDate());
   const [isGoogleLinked, setIsGoogleLinked] = useState<boolean>(false);
-  const [events, setEvents] = useState<Event[]>(() => (remoteEnabled ? [] : INITIAL_EVENTS));
-  const [periodRecords, setPeriodRecords] = useState<PeriodRecord[]>([
-    { start: '2026-04-09', end: null } // The initial baseline mock
-  ]);
-  
+
   // Modal & Form States
   const [activeModal, setActiveModal] = useState<'month' | 'addOptions' | 'addEvent' | 'editEvent' | 'deleteEvent' | 'applyRecEvent' | 'startPeriod' | 'endPeriod' | null>(null);
   const [editingEventId, setEditingEventId] = useState<number | string | null>(null);
 
-  const [formDate, setFormDate] = useState('2026-04-10');
+  const [formDate, setFormDate] = useState(() => {
+    const t = new Date();
+    return formatDateString(t.getFullYear(), t.getMonth(), t.getDate());
+  });
   const [formTimeStart, setFormTimeStart] = useState('');
   const [formTimeEnd, setFormTimeEnd] = useState('');
   const [formTitle, setFormTitle] = useState('');
@@ -165,48 +97,6 @@ export default function CalendarPage() {
       }, 10);
     }
   }, [activeModal]);
-
-  const reloadSchedules = useCallback(async () => {
-    const sb = getSupabase();
-    if (!sb || !remoteEnabled) return;
-    try {
-      await ensureSupabaseSession(sb);
-      const { data, error } = await fetchSchedules(sb);
-      if (error) {
-        console.error(error);
-        return;
-      }
-      setEvents((data ?? []).map(scheduleRowToEvent));
-    } catch (e) {
-      console.error(e);
-    }
-  }, [remoteEnabled]);
-
-  useEffect(() => {
-    if (!remoteEnabled) return;
-    let cancelled = false;
-    (async () => {
-      const sb = getSupabase();
-      if (!sb) return;
-      try {
-        await ensureSupabaseSession(sb);
-        const { data, error } = await fetchSchedules(sb);
-        if (cancelled) return;
-        if (error) {
-          console.error(error);
-          setEvents([]);
-          return;
-        }
-        setEvents((data ?? []).map(scheduleRowToEvent));
-      } catch (e) {
-        console.error(e);
-        if (!cancelled) setEvents([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [remoteEnabled]);
 
   const selectedDateStr = selectedDay ? formatDateString(year, month, selectedDay) : '';
   const isStartDate = periodRecords.some(r => r.start === selectedDateStr);
@@ -242,7 +132,7 @@ export default function CalendarPage() {
     return new Date(aY, aM - 1, aD).getTime() - new Date(bY, bM - 1, bD).getTime();
   });
   
-  const dotDates = events.map(e => e.date);
+  const dotDates = useMemo(() => new Set(events.map((e) => e.date)), [events]);
 
   // Handlers
   const handleSelectMonth = (y: number, m: number) => {
@@ -259,7 +149,7 @@ export default function CalendarPage() {
     setActiveModal('addEvent');
   };
 
-  const openEditEvent = (evt: Event) => {
+  const openEditEvent = (evt: CalendarScheduleEvent) => {
     setEditingEventId(evt.id);
     setFormDate(evt.date);
     
@@ -276,7 +166,7 @@ export default function CalendarPage() {
     setActiveModal('editEvent');
   };
 
-  const openApplyRec = (evt: Event) => {
+  const openApplyRec = (evt: CalendarScheduleEvent) => {
     setEditingEventId(evt.id);
     setActiveModal('applyRecEvent');
   };
@@ -292,7 +182,7 @@ export default function CalendarPage() {
     if (sb && remoteEnabled) {
       try {
         await ensureSupabaseSession(sb);
-        const { error } = await updateSchedule(sb, Number(evt.id), {
+        const { error } = await updateSchedule(sb, assertValidScheduleId(evt.id), {
           title: evt.title,
           date: evt.date,
           time: evt.recTime,
@@ -305,7 +195,7 @@ export default function CalendarPage() {
         await reloadSchedules();
         setActiveModal(null);
       } catch (e) {
-        alert(e instanceof Error ? e.message : '추천 일정을 적용하지 못했습니다.');
+        alert(formatSupabaseError(e, '추천 일정을 적용하지 못했습니다.'));
       }
       return;
     }
@@ -383,21 +273,20 @@ export default function CalendarPage() {
           const { error } = await insertSchedule(sb, user.id, input);
           if (error) throw error;
         } else if (activeModal === 'editEvent' && editingEventId != null) {
-          const idNum = Number(editingEventId);
-          if (!Number.isFinite(idNum)) throw new Error('잘못된 일정입니다.');
-          const { error } = await updateSchedule(sb, idNum, input);
+          const scheduleId = assertValidScheduleId(editingEventId);
+          const { error } = await updateSchedule(sb, scheduleId, input);
           if (error) throw error;
         }
         await reloadSchedules();
         setActiveModal(null);
       } catch (e) {
-        alert(e instanceof Error ? e.message : '일정을 저장하지 못했습니다.');
+        alert(formatSupabaseError(e, '일정을 저장하지 못했습니다.'));
       }
       return;
     }
 
     if (activeModal === 'addEvent') {
-      const newEvent: Event = {
+        const newEvent: CalendarScheduleEvent = {
         id: Date.now(),
         title: formTitle.trim(),
         time: finalTime,
@@ -423,14 +312,13 @@ export default function CalendarPage() {
     if (sb && remoteEnabled) {
       try {
         await ensureSupabaseSession(sb);
-        const idNum = Number(editingEventId);
-        if (!Number.isFinite(idNum)) throw new Error('잘못된 일정입니다.');
-        const { error } = await deleteSchedule(sb, idNum);
+        const scheduleId = assertValidScheduleId(editingEventId);
+        const { error } = await deleteSchedule(sb, scheduleId);
         if (error) throw error;
         await reloadSchedules();
         setActiveModal(null);
       } catch (e) {
-        alert(e instanceof Error ? e.message : '일정을 삭제하지 못했습니다.');
+        alert(formatSupabaseError(e, '일정을 삭제하지 못했습니다.'));
       }
       return;
     }
@@ -443,7 +331,7 @@ export default function CalendarPage() {
   const displayFormDateObj = formDate ? formDate.split('-').map(Number) : [year, month + 1, selectedDay || 1];
   const formDateLabel = `${displayFormDateObj[0]}년 ${displayFormDateObj[1]}월 ${displayFormDateObj[2]}일`;
 
-  const formatEventSummaryLine = (evt: Event) => {
+  const formatEventSummaryLine = (evt: CalendarScheduleEvent) => {
     const [, m, d] = evt.date.split('-').map(Number);
     return `${m}월 ${d}일 ${evt.title}`;
   };
@@ -461,6 +349,14 @@ export default function CalendarPage() {
         <h1 className="page-title">월별 스케줄 관리</h1>
         <div style={{ width: 24 }} />
       </div>
+
+      {remoteEnabled ? (
+        <div style={{ margin: '-6px 20px 12px', color: '#8B95A1', fontSize: '12px' }}>
+          {remoteStatus.state === 'loading' ? 'Supabase 연동 중…' : null}
+          {remoteStatus.state === 'ready' ? 'Supabase 연동됨' : null}
+          {remoteStatus.state === 'error' ? `Supabase 오류: ${remoteStatus.message}` : null}
+        </div>
+      ) : null}
 
       {/* Hero Banner */}
       <div className="hero-banner">
@@ -502,16 +398,20 @@ export default function CalendarPage() {
               if (month === 11) { cellYear += 1; cellMonth = 0; } else { cellMonth += 1; }
             }
 
-            const cycle = getCycleForDate(cellYear, cellMonth, dayObj.day, periodRecords);
+            const cycle = getCyclePhaseForCalendarDay(periodRecords, cellYear, cellMonth, dayObj.day);
             const isSelected = selectedDay === dayObj.day && !dayObj.isPrevMonth && !dayObj.isNextMonth;
             
             const iterDateStr = formatDateString(cellYear, cellMonth, dayObj.day);
-            const hasDot = dotDates.includes(iterDateStr); 
+            const hasDot = dotDates.has(iterDateStr); 
 
             let radiusClass = '';
             if (cycle) {
-              const isStartOfPhase = getCycleForDate(cellYear, cellMonth, dayObj.day - 1, periodRecords) !== cycle;
-              const isEndOfPhase = getCycleForDate(cellYear, cellMonth, dayObj.day + 1, periodRecords) !== cycle;
+              const prev = calendarAddDays(cellYear, cellMonth, dayObj.day, -1);
+              const next = calendarAddDays(cellYear, cellMonth, dayObj.day, 1);
+              const isStartOfPhase =
+                getCyclePhaseForCalendarDay(periodRecords, prev.y, prev.m0, prev.d) !== cycle;
+              const isEndOfPhase =
+                getCyclePhaseForCalendarDay(periodRecords, next.y, next.m0, next.d) !== cycle;
               
               const roundLeft = isStartOfPhase || isSunday;
               const roundRight = isEndOfPhase || isSaturday;

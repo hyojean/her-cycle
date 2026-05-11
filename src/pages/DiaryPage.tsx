@@ -5,31 +5,18 @@ import './CalendarPage.css';
 import './HomePage.css';
 import './DiaryPage.css';
 import heroIcon from '../assets/calendar_hero_3d_icon.png';
-import { getFullCalendarDays, formatDateString } from '../utils/date';
+import {
+  formatDiaryScheduleTimeLabel,
+  getFullCalendarDays,
+  formatDateString,
+  toCalendarDateString,
+} from '../utils/date';
+import { calendarAddDays, getCyclePhaseForCalendarDay, type CyclePhase } from '../utils/cycleCalendar';
+import { useCalendarData } from '../context/CalendarDataContext';
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
-/** 2026년 4월 시안 기준 주기 구간 (피그마 그리드와 동일) */
-function getApril2026Phase(day: number): 'menstruation' | 'follicular' | 'ovulation' | 'luteal' | null {
-  if (day >= 7 && day <= 13) return 'menstruation';
-  if (day >= 14 && day <= 20) return 'follicular';
-  if (day >= 21 && day <= 25) return 'ovulation';
-  if (day >= 26 && day <= 30) return 'luteal';
-  return null;
-}
-
-function getPhaseForCell(
-  year: number,
-  month: number,
-  day: number,
-  isCurrentMonth: boolean
-): 'menstruation' | 'follicular' | 'ovulation' | 'luteal' | null {
-  if (!isCurrentMonth) return null;
-  if (year === 2026 && month === 3) return getApril2026Phase(day);
-  return null;
-}
-
-const PHASE_LABELS: Record<'menstruation' | 'follicular' | 'ovulation' | 'luteal', string> = {
+const PHASE_LABELS: Record<CyclePhase, string> = {
   menstruation: '생리기',
   follicular: '난포기',
   ovulation: '배란기',
@@ -41,27 +28,19 @@ type LogEntry = {
   title: string;
   timeLabel: string;
   variant: 'activity' | 'note';
+  /** 캘린더 탭 Supabase 일정과 동기화된 항목(일기에서는 읽기 전용) */
+  source?: 'diary' | 'calendar';
 };
 
+/** 일기 본문(note)만 로컬 보관. 일정(activity)은 캘린더 탭 scheduleEvents와만 동기화 */
 const INITIAL_LOGS_BY_DATE: Record<string, LogEntry[]> = {
   '2026-04-09': [
-    {
-      id: '1',
-      title: '새벽 등산 3km 왕복 러닝',
-      timeLabel: '오전 4시 - 오전 5시',
-      variant: 'activity',
-    },
-    {
-      id: '2',
-      title: '프로젝트 헤일메리 영화 관람',
-      timeLabel: '오후 9시 - 오후 10시',
-      variant: 'activity',
-    },
     {
       id: '3',
       title: '나도 내 기분을 잘 모르겠음. 복통이 조금 있어서 일에 집중이 잘 안되었음. 복통이 아니라 허리가 끊어질 듯한 통증인 듯 싶기도?',
       timeLabel: '오후 1시 14분',
       variant: 'note',
+      source: 'diary',
     },
   ],
 };
@@ -74,6 +53,31 @@ function cloneLogsByDate(src: Record<string, LogEntry[]>): Record<string, LogEnt
   return out;
 }
 const DIARY_VIEW_MODE_KEY = 'diary:viewMode';
+const DIARY_LOGS_STORAGE_KEY = 'diary:logsByDate:v1';
+
+function loadLogsByDateFromStorage(): Record<string, LogEntry[]> {
+  if (typeof window === 'undefined') return cloneLogsByDate(INITIAL_LOGS_BY_DATE);
+  try {
+    const raw = window.localStorage.getItem(DIARY_LOGS_STORAGE_KEY);
+    if (!raw) return cloneLogsByDate(INITIAL_LOGS_BY_DATE);
+    const parsed = JSON.parse(raw) as Record<string, LogEntry[]>;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return cloneLogsByDate(INITIAL_LOGS_BY_DATE);
+    }
+    return cloneLogsByDate(parsed);
+  } catch {
+    return cloneLogsByDate(INITIAL_LOGS_BY_DATE);
+  }
+}
+
+function persistLogsByDateToStorage(logs: Record<string, LogEntry[]>) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(DIARY_LOGS_STORAGE_KEY, JSON.stringify(logs));
+  } catch {
+    // ignore
+  }
+}
 
 function getWeekDatesContaining(year: number, month: number, day: number): Date[] {
   const anchor = new Date(year, month, day);
@@ -89,14 +93,18 @@ function getWeekDatesContaining(year: number, month: number, day: number): Date[
 
 export default function DiaryPage() {
   const navigate = useNavigate();
+  const { periodRecords, scheduleEvents, reloadSchedules, remoteEnabled } = useCalendarData();
   const [viewMode, setViewMode] = useState<'week' | 'month'>(() => {
     const savedMode = localStorage.getItem(DIARY_VIEW_MODE_KEY);
     return savedMode === 'week' || savedMode === 'month' ? savedMode : 'month';
   });
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 3, 1));
-  const [selectedDay, setSelectedDay] = useState<number | null>(9);
+  const [currentDate, setCurrentDate] = useState(() => {
+    const t = new Date();
+    return new Date(t.getFullYear(), t.getMonth(), 1);
+  });
+  const [selectedDay, setSelectedDay] = useState<number | null>(() => new Date().getDate());
   const [diaryText, setDiaryText] = useState('');
-  const [logsByDate, setLogsByDate] = useState<Record<string, LogEntry[]>>(() => cloneLogsByDate(INITIAL_LOGS_BY_DATE));
+  const [logsByDate, setLogsByDate] = useState<Record<string, LogEntry[]>>(() => loadLogsByDateFromStorage());
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
@@ -132,18 +140,63 @@ export default function DiaryPage() {
     localStorage.setItem(DIARY_VIEW_MODE_KEY, viewMode);
   }, [viewMode]);
 
+  useEffect(() => {
+    persistLogsByDateToStorage(logsByDate);
+  }, [logsByDate]);
+
+  /** 캘린더 탭에서 저장한 직후 일기로 올 때 최신 일정 반영 */
+  useEffect(() => {
+    if (!remoteEnabled) return;
+    void reloadSchedules();
+  }, [remoteEnabled, reloadSchedules]);
+
   const effectiveDay = selectedDay ?? 1;
   const weekDates = useMemo(
     () => getWeekDatesContaining(year, month, effectiveDay),
     [year, month, effectiveDay]
   );
   const selectedDateStr = formatDateString(year, month, effectiveDay);
-  const dayLogs = logsByDate[selectedDateStr] ?? [];
 
+  /** 오늘 이후 날짜는 일기 작성 비노출 (과거·오늘만 작성) */
+  const canWriteDiaryForSelectedDay = useMemo(() => {
+    const t = new Date();
+    const todayStr = formatDateString(t.getFullYear(), t.getMonth(), t.getDate());
+    return selectedDateStr <= todayStr;
+  }, [selectedDateStr]);
+
+  /** 일기 탭에서의 '일정' 행: 캘린더 탭 데이터만. 로컬 activity 목업은 사용하지 않음 */
+  const dayLogsDiaryNotes = useMemo(
+    () => (logsByDate[selectedDateStr] ?? []).filter((l) => l.variant === 'note'),
+    [logsByDate, selectedDateStr]
+  );
+
+  const calendarLogsForDay = useMemo(
+    () =>
+      scheduleEvents
+        .filter((e) => toCalendarDateString(e.date) === selectedDateStr)
+        .map((e) => ({
+          id: `calendar-${String(e.id)}`,
+          title: e.title,
+          timeLabel: formatDiaryScheduleTimeLabel(toCalendarDateString(e.date), e.time),
+          variant: 'activity' as const,
+          source: 'calendar' as const,
+        })),
+    [scheduleEvents, selectedDateStr]
+  );
+
+  const dayLogs = useMemo(
+    () => [
+      ...calendarLogsForDay,
+      ...dayLogsDiaryNotes.map((l) => ({ ...l, source: l.source ?? ('diary' as const) })),
+    ],
+    [calendarLogsForDay, dayLogsDiaryNotes]
+  );
+
+  /** 월간 캘린더 점: 일기(note)가 있는 날만 표시 */
   const dotDates = useMemo(() => {
     const s = new Set<string>();
     for (const [d, logs] of Object.entries(logsByDate)) {
-      if (logs.length > 0) s.add(d);
+      if (logs.some((l) => l.variant === 'note')) s.add(d);
     }
     return s;
   }, [logsByDate]);
@@ -154,6 +207,7 @@ export default function DiaryPage() {
     setEditDraft('');
     setPendingDeleteLogId(null);
     setActiveModal(null);
+    setDiaryText('');
   }, [selectedDateStr]);
 
   useEffect(() => {
@@ -174,6 +228,27 @@ export default function DiaryPage() {
 
   const weekdayLabel = WEEKDAYS[new Date(year, month, effectiveDay).getDay()];
 
+  const weekSelectedPhase = getCyclePhaseForCalendarDay(periodRecords, year, month, effectiveDay);
+
+  /** 주간 배경: 해당 주 각 날의 주기 단계별 색 + 같은 단계 연속 구간 캡슐 연결 */
+  const weekPhaseStrip = useMemo(() => {
+    type Seg = 'single' | 'start' | 'mid' | 'end';
+    const phases = weekDates.map((d) =>
+      getCyclePhaseForCalendarDay(periodRecords, d.getFullYear(), d.getMonth(), d.getDate())
+    );
+    return phases.map((p, i): { phase: CyclePhase; seg: Seg } | null => {
+      if (!p) return null;
+      const prevSame = i > 0 && phases[i - 1] === p;
+      const nextSame = i < 6 && phases[i + 1] === p;
+      let seg: Seg;
+      if (!prevSame && !nextSame) seg = 'single';
+      else if (!prevSame && nextSame) seg = 'start';
+      else if (prevSame && !nextSame) seg = 'end';
+      else seg = 'mid';
+      return { phase: p, seg };
+    });
+  }, [weekDates, periodRecords]);
+
   const handleSelectMonth = (y: number, m: number) => {
     setCurrentDate(new Date(y, m, 1));
     setSelectedDay(null);
@@ -191,10 +266,40 @@ export default function DiaryPage() {
     d.getMonth() === month &&
     d.getDate() === selectedDay;
 
-  const weekSelectedPhase = getPhaseForCell(year, month, effectiveDay, true);
-
   const formatDiaryDeletePrimary = (log: LogEntry) =>
     `${month + 1}월 ${effectiveDay}일 ${log.title}`;
+
+  const handleSubmitDiaryWrite = () => {
+    if (!canWriteDiaryForSelectedDay) return;
+    const text = diaryText.trim();
+    if (!text) {
+      alert('내용을 입력해주세요.');
+      return;
+    }
+    const now = new Date();
+    /** 목록에 찍히는 날짜·시각: 선택한 일자 + 지금 시각(금일이 아닌 날을 고른 경우에도 해당 일자로 표시) */
+    const stamped = new Date(year, month, effectiveDay, now.getHours(), now.getMinutes(), now.getSeconds());
+    const timeLabel = stamped.toLocaleString('ko-KR', {
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+    const dateKey = formatDateString(year, month, effectiveDay);
+    const newEntry: LogEntry = {
+      id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `diary-${now.getTime()}`,
+      title: text,
+      timeLabel,
+      variant: 'note',
+      source: 'diary',
+    };
+    setLogsByDate((prev) => {
+      const prevList = prev[dateKey] ?? [];
+      return { ...prev, [dateKey]: [newEntry, ...prevList] };
+    });
+    setDiaryText('');
+  };
 
   const handleConfirmDeleteDiary = () => {
     if (!pendingDeleteLogId) return;
@@ -299,26 +404,26 @@ export default function DiaryPage() {
                 }
 
                 const isCurrentMonth = !dayObj.isPrevMonth && !dayObj.isNextMonth;
-                const cycle = getPhaseForCell(cellYear, cellMonth, dayObj.day, isCurrentMonth);
+                const cycle = getCyclePhaseForCalendarDay(periodRecords, cellYear, cellMonth, dayObj.day);
                 const isSelected =
                   isCurrentMonth && selectedDay !== null && selectedDay === dayObj.day;
                 const iterDateStr = formatDateString(cellYear, cellMonth, dayObj.day);
                 const hasDot = dotDates.has(iterDateStr);
 
                 let radiusClass = '';
-                if (cycle && isCurrentMonth && cellYear === 2026 && cellMonth === 3) {
-                  const d = dayObj.day;
-                  const daysInApril = 30;
-                  const prevP = d > 1 ? getApril2026Phase(d - 1) : null;
-                  const nextP = d < daysInApril ? getApril2026Phase(d + 1) : null;
-                  const roundLeft = prevP !== cycle || isSunday;
-                  const roundRight = nextP !== cycle || isSaturday;
+                if (cycle) {
+                  const prev = calendarAddDays(cellYear, cellMonth, dayObj.day, -1);
+                  const next = calendarAddDays(cellYear, cellMonth, dayObj.day, 1);
+                  const isStartOfPhase =
+                    getCyclePhaseForCalendarDay(periodRecords, prev.y, prev.m0, prev.d) !== cycle;
+                  const isEndOfPhase =
+                    getCyclePhaseForCalendarDay(periodRecords, next.y, next.m0, next.d) !== cycle;
+                  const roundLeft = isStartOfPhase || isSunday;
+                  const roundRight = isEndOfPhase || isSaturday;
                   if (roundLeft && roundRight) radiusClass = 'radius-all';
                   else if (roundLeft) radiusClass = 'radius-left';
                   else if (roundRight) radiusClass = 'radius-right';
                   else radiusClass = 'radius-none';
-                } else if (cycle) {
-                  radiusClass = 'radius-all';
                 }
 
                 return (
@@ -370,23 +475,36 @@ export default function DiaryPage() {
               </div>
             ) : null}
             <div className="diary-week-strip-pill" role="list">
-              {weekDates.map((d, i) => {
-                const str = formatDateString(d.getFullYear(), d.getMonth(), d.getDate());
-                const outside = d.getMonth() !== month || d.getFullYear() !== year;
-                const selected = isSameDayAsSelection(d);
-                return (
-                  <button
-                    key={str}
-                    type="button"
-                    role="listitem"
-                    className={`diary-week-col${selected ? ' is-selected' : ''}${outside ? ' is-outside' : ''}`}
-                    onClick={() => handleWeekDateClick(d)}
-                  >
-                    <span className="diary-week-col-dow">{WEEKDAYS[i]}</span>
-                    <span className="diary-week-col-day">{d.getDate()}</span>
-                  </button>
-                );
-              })}
+              <div className="diary-week-strip-pill-bg" aria-hidden>
+                {weekPhaseStrip.map((cell, i) => (
+                  <div key={i} className="diary-week-phase-slot">
+                    {cell ? (
+                      <div
+                        className={`diary-week-phase-seg-inner diary-week-phase-seg-inner--${cell.phase} diary-week-phase-seg-inner--${cell.seg}`}
+                      />
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+              <div className="diary-week-strip-cols">
+                {weekDates.map((d, i) => {
+                  const str = formatDateString(d.getFullYear(), d.getMonth(), d.getDate());
+                  const outside = d.getMonth() !== month || d.getFullYear() !== year;
+                  const selected = isSameDayAsSelection(d);
+                  return (
+                    <button
+                      key={str}
+                      type="button"
+                      role="listitem"
+                      className={`diary-week-col${selected ? ' is-selected' : ''}${outside ? ' is-outside' : ''}`}
+                      onClick={() => handleWeekDateClick(d)}
+                    >
+                      <span className="diary-week-col-dow">{WEEKDAYS[i]}</span>
+                      <span className="diary-week-col-day">{d.getDate()}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}
@@ -401,6 +519,7 @@ export default function DiaryPage() {
             const expanded = selectedLogId === log.id;
             const isEditing = editingLogId === log.id;
             const canExpand = log.variant === 'note' || expandableActivityIds.has(log.id);
+            const showNoteFooter = expanded && log.variant === 'note' && log.source !== 'calendar';
             return (
               <article
                 key={log.id}
@@ -415,7 +534,7 @@ export default function DiaryPage() {
                 aria-expanded={expanded}
               >
                 <span className="diary-log-accent" aria-hidden />
-                <div className="diary-log-body">
+                <div className={`diary-log-body${showNoteFooter ? ' diary-log-body--stacked-footer' : ''}`}>
                   {isEditing ? (
                     <textarea
                       className="diary-log-edit-textarea"
@@ -436,70 +555,74 @@ export default function DiaryPage() {
                       {log.title}
                     </p>
                   )}
-                  <p className="diary-log-time">{log.timeLabel}</p>
-                  {expanded && log.variant === 'note' ? (
-                    <div className="diary-log-expand-actions" onClick={(e) => e.stopPropagation()}>
-                      {isEditing ? (
-                        <>
-                          <button
-                            type="button"
-                            className="diary-mini-btn diary-mini-btn--secondary"
-                            onClick={() => {
-                              setEditingLogId(null);
-                              setEditDraft('');
-                            }}
-                          >
-                            취소
-                          </button>
-                          <button
-                            type="button"
-                            className="diary-mini-btn diary-mini-btn--primary"
-                            onClick={() => {
-                              const next = editDraft.trim();
-                              if (!next) {
-                                alert('내용을 입력해주세요.');
-                                return;
-                              }
-                              setLogsByDate((prev) => {
-                                const list = [...(prev[selectedDateStr] ?? [])];
-                                const i = list.findIndex((x) => x.id === log.id);
-                                if (i === -1) return prev;
-                                list[i] = { ...list[i], title: next };
-                                return { ...prev, [selectedDateStr]: list };
-                              });
-                              setEditingLogId(null);
-                              setEditDraft('');
-                            }}
-                          >
-                            저장
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            className="diary-mini-btn diary-mini-btn--secondary"
-                            onClick={() => {
-                              setEditingLogId(log.id);
-                              setEditDraft(log.title);
-                            }}
-                          >
-                            수정
-                          </button>
-                          <button
-                            type="button"
-                            className="diary-mini-btn diary-mini-btn--primary"
-                            onClick={() => {
-                              setPendingDeleteLogId(log.id);
-                              setActiveModal('deleteDiary');
-                            }}
-                          >
-                            삭제
-                          </button>
-                        </>
-                      )}
+                  {showNoteFooter ? (
+                    <div className="diary-log-footer-row">
+                      <p className="diary-log-time">{log.timeLabel}</p>
+                      <div className="diary-log-expand-actions" onClick={(e) => e.stopPropagation()}>
+                        {isEditing ? (
+                          <>
+                            <button
+                              type="button"
+                              className="diary-mini-btn diary-mini-btn--secondary"
+                              onClick={() => {
+                                setEditingLogId(null);
+                                setEditDraft('');
+                              }}
+                            >
+                              취소
+                            </button>
+                            <button
+                              type="button"
+                              className="diary-mini-btn diary-mini-btn--primary"
+                              onClick={() => {
+                                const next = editDraft.trim();
+                                if (!next) {
+                                  alert('내용을 입력해주세요.');
+                                  return;
+                                }
+                                setLogsByDate((prev) => {
+                                  const list = [...(prev[selectedDateStr] ?? [])];
+                                  const i = list.findIndex((x) => x.id === log.id);
+                                  if (i === -1) return prev;
+                                  list[i] = { ...list[i], title: next };
+                                  return { ...prev, [selectedDateStr]: list };
+                                });
+                                setEditingLogId(null);
+                                setEditDraft('');
+                              }}
+                            >
+                              저장
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              className="diary-mini-btn diary-mini-btn--secondary"
+                              onClick={() => {
+                                setEditingLogId(log.id);
+                                setEditDraft(log.title);
+                              }}
+                            >
+                              수정
+                            </button>
+                            <button
+                              type="button"
+                              className="diary-mini-btn diary-mini-btn--secondary"
+                              onClick={() => {
+                                setPendingDeleteLogId(log.id);
+                                setActiveModal('deleteDiary');
+                              }}
+                            >
+                              삭제
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
-                  ) : null}
+                  ) : (
+                    <p className="diary-log-time">{log.timeLabel}</p>
+                  )}
                 </div>
               </article>
             );
@@ -507,28 +630,30 @@ export default function DiaryPage() {
         )}
       </section>
 
-      <section className="diary-write-section" aria-label="일기 작성">
-        <h2 className="diary-write-heading">
-          {month + 1}월 {effectiveDay}일 {weekdayLabel}요일 일기
-        </h2>
-        <div className="diary-write-box">
-          <textarea
-            className="diary-write-textarea"
-            placeholder="기분, 통증, 증상 등 일상 내용을 자유롭게 기록하세요."
-            value={diaryText}
-            onChange={(e) => setDiaryText(e.target.value)}
-            rows={4}
-          />
-          <div className="diary-write-actions">
-            <button type="button" className="diary-mini-btn diary-mini-btn--secondary" onClick={() => setDiaryText('')}>
-              재작성
-            </button>
-            <button type="button" className="diary-mini-btn diary-mini-btn--primary">
-              작성 완료
-            </button>
+      {canWriteDiaryForSelectedDay ? (
+        <section className="diary-write-section" aria-label="일기 작성">
+          <h2 className="diary-write-heading">
+            {month + 1}월 {effectiveDay}일 {weekdayLabel}요일 일기
+          </h2>
+          <div className="diary-write-box">
+            <textarea
+              className="diary-write-textarea"
+              placeholder="기분, 통증, 증상 등 일상 내용을 자유롭게 기록하세요."
+              value={diaryText}
+              onChange={(e) => setDiaryText(e.target.value)}
+              rows={4}
+            />
+            <div className="diary-write-actions">
+              <button type="button" className="diary-mini-btn diary-mini-btn--secondary" onClick={() => setDiaryText('')}>
+                재작성
+              </button>
+              <button type="button" className="diary-mini-btn diary-mini-btn--secondary" onClick={handleSubmitDiaryWrite}>
+                작성 완료
+              </button>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
       <section className="diary-tips-section" aria-label="생활 팁 추천">
         <h2 className="diary-tips-heading">생활 팁 추천</h2>

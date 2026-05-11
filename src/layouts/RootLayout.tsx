@@ -3,6 +3,7 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import { Home, Calendar, Scan, MessageCircle, User, Book, FileText } from 'lucide-react';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 import { ensureSupabaseSession } from '../lib/supabaseAuth';
+import { CalendarDataProvider } from '../context/CalendarDataContext';
 
 export default function RootLayout() {
   const location = useLocation();
@@ -28,9 +29,11 @@ export default function RootLayout() {
 
   return (
     <div className="app-container">
-      <main className="main-content">
-        <Outlet />
-      </main>
+      <CalendarDataProvider>
+        <main className="main-content">
+          <Outlet />
+        </main>
+      </CalendarDataProvider>
       
       <nav className="bottom-nav">
         {navItems.map((item) => {
