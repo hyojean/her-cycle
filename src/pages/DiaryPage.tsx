@@ -13,6 +13,7 @@ import {
 } from '../utils/date';
 import { calendarAddDays, getCyclePhaseForCalendarDay, type CyclePhase } from '../utils/cycleCalendar';
 import { useCalendarData } from '../context/CalendarDataContext';
+import { TEXT_LIMITS } from '../lib/limits';
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -276,6 +277,10 @@ export default function DiaryPage() {
       alert('내용을 입력해주세요.');
       return;
     }
+    if (text.length > TEXT_LIMITS.DIARY_BODY) {
+      alert(`일기 본문은 최대 ${TEXT_LIMITS.DIARY_BODY}자까지 입력할 수 있어요.`);
+      return;
+    }
     const now = new Date();
     /** 목록에 찍히는 날짜·시각: 선택한 일자 + 지금 시각(금일이 아닌 날을 고른 경우에도 해당 일자로 표시) */
     const stamped = new Date(year, month, effectiveDay, now.getHours(), now.getMinutes(), now.getSeconds());
@@ -536,13 +541,22 @@ export default function DiaryPage() {
                 <span className="diary-log-accent" aria-hidden />
                 <div className={`diary-log-body${showNoteFooter ? ' diary-log-body--stacked-footer' : ''}`}>
                   {isEditing ? (
-                    <textarea
-                      className="diary-log-edit-textarea"
-                      value={editDraft}
-                      onChange={(e) => setEditDraft(e.target.value)}
-                      rows={5}
-                      onClick={(e) => e.stopPropagation()}
-                    />
+                    <div className="diary-textarea-wrap" onClick={(e) => e.stopPropagation()}>
+                      <textarea
+                        className="diary-log-edit-textarea"
+                        value={editDraft}
+                        onChange={(e) => setEditDraft(e.target.value)}
+                        rows={5}
+                        maxLength={TEXT_LIMITS.DIARY_BODY}
+                      />
+                      <span
+                        className="diary-textarea-counter"
+                        aria-live="polite"
+                        aria-label={`${editDraft.length} / ${TEXT_LIMITS.DIARY_BODY}자`}
+                      >
+                        {editDraft.length} / {TEXT_LIMITS.DIARY_BODY}
+                      </span>
+                    </div>
                   ) : (
                     <p
                       ref={(el) => {
@@ -578,6 +592,10 @@ export default function DiaryPage() {
                                 const next = editDraft.trim();
                                 if (!next) {
                                   alert('내용을 입력해주세요.');
+                                  return;
+                                }
+                                if (next.length > TEXT_LIMITS.DIARY_BODY) {
+                                  alert(`일기 본문은 최대 ${TEXT_LIMITS.DIARY_BODY}자까지 입력할 수 있어요.`);
                                   return;
                                 }
                                 setLogsByDate((prev) => {
@@ -642,14 +660,24 @@ export default function DiaryPage() {
               value={diaryText}
               onChange={(e) => setDiaryText(e.target.value)}
               rows={4}
+              maxLength={TEXT_LIMITS.DIARY_BODY}
             />
-            <div className="diary-write-actions">
-              <button type="button" className="diary-mini-btn diary-mini-btn--secondary" onClick={() => setDiaryText('')}>
-                재작성
-              </button>
-              <button type="button" className="diary-mini-btn diary-mini-btn--secondary" onClick={handleSubmitDiaryWrite}>
-                작성 완료
-              </button>
+            <div className="diary-write-footer">
+              <span
+                className="diary-write-char-count"
+                aria-live="polite"
+                aria-label={`${diaryText.length} / ${TEXT_LIMITS.DIARY_BODY}자`}
+              >
+                {diaryText.length} / {TEXT_LIMITS.DIARY_BODY}
+              </span>
+              <div className="diary-write-actions">
+                <button type="button" className="diary-mini-btn diary-mini-btn--secondary" onClick={() => setDiaryText('')}>
+                  재작성
+                </button>
+                <button type="button" className="diary-mini-btn diary-mini-btn--secondary" onClick={handleSubmitDiaryWrite}>
+                  작성 완료
+                </button>
+              </div>
             </div>
           </div>
         </section>

@@ -1,11 +1,32 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import './HomePage.css';
 
+type Lang = 'ko' | 'en';
+const HOME_LANG_STORAGE_KEY = 'home:lang';
+
+function loadLangFromStorage(): Lang {
+  if (typeof window === 'undefined') return 'en';
+  try {
+    const raw = window.localStorage.getItem(HOME_LANG_STORAGE_KEY);
+    return raw === 'ko' || raw === 'en' ? raw : 'en';
+  } catch {
+    return 'en';
+  }
+}
+
 export default function HomePage() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [lang, setLang] = useState<'ko' | 'en'>('en');
+  const [lang, setLang] = useState<Lang>(() => loadLangFromStorage());
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(HOME_LANG_STORAGE_KEY, lang);
+    } catch {
+      // ignore quota / private mode errors
+    }
+  }, [lang]);
 
   const handleMockLogin = () => {
     setIsLoggedIn(true);

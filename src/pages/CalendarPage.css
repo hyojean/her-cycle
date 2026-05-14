@@ -467,6 +467,25 @@
   color: #8B95A1;
 }
 
+.form-textarea-wrap {
+  position: relative;
+}
+.form-textarea-wrap .form-textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding-bottom: 32px;
+}
+.form-textarea-counter {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  font-size: 12px;
+  color: #8B95A1;
+  pointer-events: none;
+  user-select: none;
+}
+
 .form-modal-actions {
   display: flex; gap: 12px;
 }

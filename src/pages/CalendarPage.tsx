@@ -15,6 +15,7 @@ import {
   updateSchedule,
   type CalendarEventInput,
 } from '../services/schedules';
+import { TEXT_LIMITS } from '../lib/limits';
 import type { PostgrestError } from '@supabase/supabase-js';
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -251,14 +252,19 @@ export default function CalendarPage() {
   };
 
   const handleSubmitEvent = async () => {
-    if (!formTitle.trim()) {
+    const trimmedTitle = formTitle.trim();
+    if (!trimmedTitle) {
       alert('일정 내용을 입력해주세요.');
+      return;
+    }
+    if (trimmedTitle.length > TEXT_LIMITS.SCHEDULE_TITLE) {
+      alert(`일정 내용은 최대 ${TEXT_LIMITS.SCHEDULE_TITLE}자까지 입력할 수 있어요.`);
       return;
     }
 
     const finalTime = formTimeStart && formTimeEnd ? `${formTimeStart} - ${formTimeEnd}` : '종일';
     const existing = activeModal === 'editEvent' ? events.find((e) => e.id === editingEventId) : undefined;
-    const input = buildScheduleInput({ title: formTitle.trim(), date: formDate, time: finalTime }, existing);
+    const input = buildScheduleInput({ title: trimmedTitle, date: formDate, time: finalTime }, existing);
 
     const sb = getSupabase();
     if (sb && remoteEnabled) {
@@ -288,7 +294,7 @@ export default function CalendarPage() {
     if (activeModal === 'addEvent') {
         const newEvent: CalendarScheduleEvent = {
         id: Date.now(),
-        title: formTitle.trim(),
+        title: trimmedTitle,
         time: finalTime,
         date: formDate,
         hasRec: false,
@@ -296,7 +302,7 @@ export default function CalendarPage() {
       setEvents([...events, newEvent]);
     } else if (activeModal === 'editEvent' && editingEventId) {
       setEvents(
-        events.map((e) => (e.id === editingEventId ? { ...e, title: formTitle.trim(), time: finalTime, date: formDate } : e))
+        events.map((e) => (e.id === editingEventId ? { ...e, title: trimmedTitle, time: finalTime, date: formDate } : e))
       );
     }
     setActiveModal(null);
@@ -613,12 +619,22 @@ export default function CalendarPage() {
                 </div>
 
                 {/* Content */}
-                <textarea 
-                  className="form-textarea"
-                  placeholder="내용을 작성하세요."
-                  value={formTitle}
-                  onChange={e => setFormTitle(e.target.value)}
-                />
+                <div className="form-textarea-wrap">
+                  <textarea
+                    className="form-textarea"
+                    placeholder="내용을 작성하세요."
+                    value={formTitle}
+                    onChange={(e) => setFormTitle(e.target.value)}
+                    maxLength={TEXT_LIMITS.SCHEDULE_TITLE}
+                  />
+                  <span
+                    className="form-textarea-counter"
+                    aria-live="polite"
+                    aria-label={`${formTitle.length} / ${TEXT_LIMITS.SCHEDULE_TITLE}자`}
+                  >
+                    {formTitle.length} / {TEXT_LIMITS.SCHEDULE_TITLE}
+                  </span>
+                </div>
               </div>
 
               <div className="form-modal-actions">

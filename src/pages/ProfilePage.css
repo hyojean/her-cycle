@@ -112,3 +112,8 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+.profile-container--modal-open {
+  overflow: hidden;
+  height: 100vh;
+}
