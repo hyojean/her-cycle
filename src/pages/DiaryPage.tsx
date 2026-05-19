@@ -14,6 +14,16 @@ import {
 import { calendarAddDays, getCyclePhaseForCalendarDay, type CyclePhase } from '../utils/cycleCalendar';
 import { useCalendarData } from '../context/CalendarDataContext';
 import { TEXT_LIMITS } from '../lib/limits';
+import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
+import { ensureSupabaseSession } from '../lib/supabaseAuth';
+import {
+  deleteDiaryEntry,
+  fetchDiaryEntries,
+  insertDiaryEntry,
+  updateDiaryEntry,
+  type DiaryEntryRow,
+} from '../services/diaryEntries';
+import { formatDiaryRecordedAtLabel } from '../utils/diaryTimeLabel';
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -33,7 +43,7 @@ type LogEntry = {
   source?: 'diary' | 'calendar';
 };
 
-/** 일기 본문(note)만 로컬 보관. 일정(activity)은 캘린더 탭 scheduleEvents와만 동기화 */
+/** 일기 본문(note): Supabase 미구성 시 로컬만, 구성 시 diary_entries + 로컬 미러. 일정(activity)은 캘린더 scheduleEvents */
 const INITIAL_LOGS_BY_DATE: Record<string, LogEntry[]> = {
   '2026-04-09': [
     {
@@ -52,6 +62,43 @@ function cloneLogsByDate(src: Record<string, LogEntry[]>): Record<string, LogEnt
     out[k] = arr.map((e) => ({ ...e }));
   }
   return out;
+}
+
+function groupDiaryRowsToLogsByDate(rows: DiaryEntryRow[]): Record<string, LogEntry[]> {
+  const sorted = [...rows].sort(
+    (a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime()
+  );
+  const out: Record<string, LogEntry[]> = {};
+  for (const row of sorted) {
+    const dateKey = toCalendarDateString(row.entry_date);
+    const entry: LogEntry = {
+      id: row.id,
+      title: row.body,
+      timeLabel: formatDiaryRecordedAtLabel(row.recorded_at),
+      variant: 'note',
+      source: 'diary',
+    };
+    const list = out[dateKey];
+    if (list) list.push(entry);
+    else out[dateKey] = [entry];
+  }
+  return out;
+}
+
+/** 로컬 저장본에서 일기(note·diary)만 골라 Supabase로 옮길 때 사용 */
+function collectLocalDiaryNotesForMigration(src: Record<string, LogEntry[]>) {
+  const payloads: { entryDate: string; body: string; recordedAt: string }[] = [];
+  for (const [dateKey, logs] of Object.entries(src)) {
+    for (const log of logs) {
+      if (log.variant !== 'note' || log.source === 'calendar') continue;
+      payloads.push({
+        entryDate: dateKey,
+        body: log.title,
+        recordedAt: new Date().toISOString(),
+      });
+    }
+  }
+  return payloads;
 }
 const DIARY_VIEW_MODE_KEY = 'diary:viewMode';
 const DIARY_LOGS_STORAGE_KEY = 'diary:logsByDate:v1';
@@ -105,7 +152,10 @@ export default function DiaryPage() {
   });
   const [selectedDay, setSelectedDay] = useState<number | null>(() => new Date().getDate());
   const [diaryText, setDiaryText] = useState('');
-  const [logsByDate, setLogsByDate] = useState<Record<string, LogEntry[]>>(() => loadLogsByDateFromStorage());
+  const [logsByDate, setLogsByDate] = useState<Record<string, LogEntry[]>>(() =>
+    isSupabaseConfigured() ? {} : loadLogsByDateFromStorage()
+  );
+  const [diaryRemoteReady, setDiaryRemoteReady] = useState(() => !isSupabaseConfigured());
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
@@ -142,8 +192,61 @@ export default function DiaryPage() {
   }, [viewMode]);
 
   useEffect(() => {
+    if (remoteEnabled && !diaryRemoteReady) return;
     persistLogsByDateToStorage(logsByDate);
-  }, [logsByDate]);
+  }, [logsByDate, remoteEnabled, diaryRemoteReady]);
+
+  /** Supabase에서 일기(note)를 불러오거나, 비어 있으면 로컬 일기를 한 번 업로드합니다. */
+  useEffect(() => {
+    if (!remoteEnabled) {
+      setDiaryRemoteReady(true);
+      return;
+    }
+    let cancelled = false;
+    setDiaryRemoteReady(false);
+    (async () => {
+      const sb = getSupabase();
+      if (!sb) {
+        if (!cancelled) setDiaryRemoteReady(true);
+        return;
+      }
+      try {
+        await ensureSupabaseSession(sb);
+        const { data, error } = await fetchDiaryEntries(sb);
+        if (cancelled) return;
+        if (error) throw error;
+        const rows = (data ?? []) as DiaryEntryRow[];
+        if (rows.length > 0) {
+          setLogsByDate(groupDiaryRowsToLogsByDate(rows));
+        } else {
+          const local = loadLogsByDateFromStorage();
+          const payloads = collectLocalDiaryNotesForMigration(local);
+          const {
+            data: { user },
+          } = await sb.auth.getUser();
+          if (user && payloads.length > 0) {
+            for (const p of payloads) {
+              const { error: insErr } = await insertDiaryEntry(sb, user.id, p);
+              if (insErr) throw insErr;
+            }
+            const { data: data2, error: err2 } = await fetchDiaryEntries(sb);
+            if (err2) throw err2;
+            setLogsByDate(groupDiaryRowsToLogsByDate((data2 ?? []) as DiaryEntryRow[]));
+          } else {
+            setLogsByDate({});
+          }
+        }
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setLogsByDate(loadLogsByDateFromStorage());
+      } finally {
+        if (!cancelled) setDiaryRemoteReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [remoteEnabled]);
 
   /** 캘린더 탭에서 저장한 직후 일기로 올 때 최신 일정 반영 */
   useEffect(() => {
@@ -270,7 +373,7 @@ export default function DiaryPage() {
   const formatDiaryDeletePrimary = (log: LogEntry) =>
     `${month + 1}월 ${effectiveDay}일 ${log.title}`;
 
-  const handleSubmitDiaryWrite = () => {
+  const handleSubmitDiaryWrite = async () => {
     if (!canWriteDiaryForSelectedDay) return;
     const text = diaryText.trim();
     if (!text) {
@@ -282,7 +385,6 @@ export default function DiaryPage() {
       return;
     }
     const now = new Date();
-    /** 목록에 찍히는 날짜·시각: 선택한 일자 + 지금 시각(금일이 아닌 날을 고른 경우에도 해당 일자로 표시) */
     const stamped = new Date(year, month, effectiveDay, now.getHours(), now.getMinutes(), now.getSeconds());
     const timeLabel = stamped.toLocaleString('ko-KR', {
       month: 'long',
@@ -292,6 +394,42 @@ export default function DiaryPage() {
       hour12: true,
     });
     const dateKey = formatDateString(year, month, effectiveDay);
+    const recordedIso = stamped.toISOString();
+
+    if (remoteEnabled) {
+      const sb = getSupabase();
+      if (!sb) return;
+      try {
+        await ensureSupabaseSession(sb);
+        const {
+          data: { user },
+        } = await sb.auth.getUser();
+        if (!user) throw new Error('로그인 세션이 없습니다.');
+        const { data: row, error } = await insertDiaryEntry(sb, user.id, {
+          entryDate: dateKey,
+          body: text,
+          recordedAt: recordedIso,
+        });
+        if (error) throw error;
+        if (!row) throw new Error('일기를 저장하지 못했습니다.');
+        const newEntry: LogEntry = {
+          id: row.id,
+          title: row.body,
+          timeLabel: formatDiaryRecordedAtLabel(row.recorded_at),
+          variant: 'note',
+          source: 'diary',
+        };
+        setLogsByDate((prev) => {
+          const prevList = prev[dateKey] ?? [];
+          return { ...prev, [dateKey]: [newEntry, ...prevList] };
+        });
+        setDiaryText('');
+      } catch (e) {
+        alert(e instanceof Error ? e.message : '일기를 저장하지 못했습니다.');
+      }
+      return;
+    }
+
     const newEntry: LogEntry = {
       id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `diary-${now.getTime()}`,
       title: text,
@@ -306,10 +444,25 @@ export default function DiaryPage() {
     setDiaryText('');
   };
 
-  const handleConfirmDeleteDiary = () => {
+  const handleConfirmDeleteDiary = async () => {
     if (!pendingDeleteLogId) return;
+    const id = pendingDeleteLogId;
+
+    if (remoteEnabled) {
+      const sb = getSupabase();
+      if (!sb) return;
+      try {
+        await ensureSupabaseSession(sb);
+        const { error } = await deleteDiaryEntry(sb, id);
+        if (error) throw error;
+      } catch (e) {
+        alert(e instanceof Error ? e.message : '일기를 삭제하지 못했습니다.');
+        return;
+      }
+    }
+
     setLogsByDate((prev) => {
-      const list = (prev[selectedDateStr] ?? []).filter((x) => x.id !== pendingDeleteLogId);
+      const list = (prev[selectedDateStr] ?? []).filter((x) => x.id !== id);
       const next = { ...prev };
       if (list.length === 0) delete next[selectedDateStr];
       else next[selectedDateStr] = list;
@@ -589,24 +742,51 @@ export default function DiaryPage() {
                               type="button"
                               className="diary-mini-btn diary-mini-btn--primary"
                               onClick={() => {
-                                const next = editDraft.trim();
-                                if (!next) {
-                                  alert('내용을 입력해주세요.');
-                                  return;
-                                }
-                                if (next.length > TEXT_LIMITS.DIARY_BODY) {
-                                  alert(`일기 본문은 최대 ${TEXT_LIMITS.DIARY_BODY}자까지 입력할 수 있어요.`);
-                                  return;
-                                }
-                                setLogsByDate((prev) => {
-                                  const list = [...(prev[selectedDateStr] ?? [])];
-                                  const i = list.findIndex((x) => x.id === log.id);
-                                  if (i === -1) return prev;
-                                  list[i] = { ...list[i], title: next };
-                                  return { ...prev, [selectedDateStr]: list };
-                                });
-                                setEditingLogId(null);
-                                setEditDraft('');
+                                void (async () => {
+                                  const next = editDraft.trim();
+                                  if (!next) {
+                                    alert('내용을 입력해주세요.');
+                                    return;
+                                  }
+                                  if (next.length > TEXT_LIMITS.DIARY_BODY) {
+                                    alert(`일기 본문은 최대 ${TEXT_LIMITS.DIARY_BODY}자까지 입력할 수 있어요.`);
+                                    return;
+                                  }
+                                  if (remoteEnabled) {
+                                    const sb = getSupabase();
+                                    if (!sb) return;
+                                    try {
+                                      await ensureSupabaseSession(sb);
+                                      const { data: row, error } = await updateDiaryEntry(sb, log.id, next);
+                                      if (error) throw error;
+                                      if (!row) throw new Error('저장하지 못했습니다.');
+                                      setLogsByDate((prev) => {
+                                        const list = [...(prev[selectedDateStr] ?? [])];
+                                        const i = list.findIndex((x) => x.id === log.id);
+                                        if (i === -1) return prev;
+                                        list[i] = {
+                                          ...list[i],
+                                          title: row.body,
+                                          timeLabel: formatDiaryRecordedAtLabel(row.recorded_at),
+                                        };
+                                        return { ...prev, [selectedDateStr]: list };
+                                      });
+                                    } catch (e) {
+                                      alert(e instanceof Error ? e.message : '저장하지 못했습니다.');
+                                      return;
+                                    }
+                                  } else {
+                                    setLogsByDate((prev) => {
+                                      const list = [...(prev[selectedDateStr] ?? [])];
+                                      const i = list.findIndex((x) => x.id === log.id);
+                                      if (i === -1) return prev;
+                                      list[i] = { ...list[i], title: next };
+                                      return { ...prev, [selectedDateStr]: list };
+                                    });
+                                  }
+                                  setEditingLogId(null);
+                                  setEditDraft('');
+                                })();
                               }}
                             >
                               저장
@@ -653,6 +833,11 @@ export default function DiaryPage() {
           <h2 className="diary-write-heading">
             {month + 1}월 {effectiveDay}일 {weekdayLabel}요일 일기
           </h2>
+          {remoteEnabled && !diaryRemoteReady ? (
+            <p className="diary-remote-loading" role="status">
+              일기를 불러오는 중…
+            </p>
+          ) : null}
           <div className="diary-write-box">
             <textarea
               className="diary-write-textarea"
@@ -661,6 +846,7 @@ export default function DiaryPage() {
               onChange={(e) => setDiaryText(e.target.value)}
               rows={4}
               maxLength={TEXT_LIMITS.DIARY_BODY}
+              disabled={remoteEnabled && !diaryRemoteReady}
             />
             <div className="diary-write-footer">
               <span
@@ -671,10 +857,20 @@ export default function DiaryPage() {
                 {diaryText.length} / {TEXT_LIMITS.DIARY_BODY}
               </span>
               <div className="diary-write-actions">
-                <button type="button" className="diary-mini-btn diary-mini-btn--secondary" onClick={() => setDiaryText('')}>
+                <button
+                  type="button"
+                  className="diary-mini-btn diary-mini-btn--secondary"
+                  disabled={remoteEnabled && !diaryRemoteReady}
+                  onClick={() => setDiaryText('')}
+                >
                   재작성
                 </button>
-                <button type="button" className="diary-mini-btn diary-mini-btn--secondary" onClick={handleSubmitDiaryWrite}>
+                <button
+                  type="button"
+                  className="diary-mini-btn diary-mini-btn--secondary"
+                  disabled={remoteEnabled && !diaryRemoteReady}
+                  onClick={() => void handleSubmitDiaryWrite()}
+                >
                   작성 완료
                 </button>
               </div>

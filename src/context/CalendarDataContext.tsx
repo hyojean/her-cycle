@@ -4,12 +4,14 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 import { ensureSupabaseSession } from '../lib/supabaseAuth';
 import { fetchSchedules, scheduleRowToEvent } from '../services/schedules';
+import { fetchPeriodRecords, replacePeriodRecords } from '../services/periodRecordsRemote';
 import {
   loadPeriodRecordsFromStorage,
   persistPeriodRecordsToStorage,
@@ -92,8 +94,12 @@ const CalendarDataContext = createContext<CalendarDataContextValue | null>(null)
 
 export function CalendarDataProvider({ children }: { children: ReactNode }) {
   const remoteEnabled = isSupabaseConfigured();
+  const lastPushedPeriodJsonRef = useRef<string>('');
+  const periodDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [periodRemoteReady, setPeriodRemoteReady] = useState(() => !isSupabaseConfigured());
   const [periodRecords, setPeriodRecords] = useState<PeriodRecord[]>(() =>
-    loadPeriodRecordsFromStorage()
+    isSupabaseConfigured() ? [] : loadPeriodRecordsFromStorage()
   );
   const [scheduleEvents, setScheduleEvents] = useState<CalendarScheduleEvent[]>(() =>
     remoteEnabled ? [] : buildMockScheduleEvents()
@@ -103,18 +109,121 @@ export function CalendarDataProvider({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
+    if (remoteEnabled && !periodRemoteReady) return;
     persistPeriodRecordsToStorage(periodRecords);
-  }, [periodRecords]);
+  }, [periodRecords, remoteEnabled, periodRemoteReady]);
+
+  /** Supabase에서 생리 기록을 불러오거나, DB가 비었을 때 로컬 데이터를 한 번 업로드합니다. */
+  useEffect(() => {
+    if (!remoteEnabled) {
+      setPeriodRemoteReady(true);
+      return;
+    }
+    let cancelled = false;
+    setPeriodRemoteReady(false);
+    (async () => {
+      const sb = getSupabase();
+      if (!sb) {
+        if (!cancelled) setPeriodRemoteReady(true);
+        return;
+      }
+      try {
+        await ensureSupabaseSession(sb);
+        const { data: remote, error } = await fetchPeriodRecords(sb);
+        if (cancelled) return;
+        if (error) {
+          console.error(error);
+          return;
+        }
+        const local = loadPeriodRecordsFromStorage();
+        const {
+          data: { user },
+        } = await sb.auth.getUser();
+        if (!user) return;
+
+        if ((remote?.length ?? 0) > 0) {
+          lastPushedPeriodJsonRef.current = JSON.stringify(remote);
+          setPeriodRecords(remote!);
+        } else if (local.length > 0) {
+          const { error: repErr } = await replacePeriodRecords(sb, user.id, local);
+          if (repErr) {
+            console.error(repErr);
+            return;
+          }
+          lastPushedPeriodJsonRef.current = JSON.stringify(local);
+          setPeriodRecords(local);
+        } else {
+          lastPushedPeriodJsonRef.current = '[]';
+          setPeriodRecords([]);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        if (!cancelled) setPeriodRemoteReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [remoteEnabled]);
+
+  /** 생리 기록 변경 시 Supabase에 반영(디바운스). */
+  useEffect(() => {
+    if (!remoteEnabled || !periodRemoteReady) return;
+    const json = JSON.stringify(periodRecords);
+    if (json === lastPushedPeriodJsonRef.current) return;
+
+    if (periodDebounceRef.current) clearTimeout(periodDebounceRef.current);
+    periodDebounceRef.current = setTimeout(async () => {
+      const sb = getSupabase();
+      if (!sb) return;
+      try {
+        await ensureSupabaseSession(sb);
+        const {
+          data: { user },
+        } = await sb.auth.getUser();
+        if (!user) return;
+        const { error } = await replacePeriodRecords(sb, user.id, periodRecords);
+        if (error) {
+          console.error(error);
+          return;
+        }
+        lastPushedPeriodJsonRef.current = JSON.stringify(periodRecords);
+      } catch (err) {
+        console.error(err);
+      }
+    }, 650);
+
+    return () => {
+      if (periodDebounceRef.current) clearTimeout(periodDebounceRef.current);
+    };
+  }, [periodRecords, remoteEnabled, periodRemoteReady]);
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === PERIOD_RECORDS_STORAGE_KEY) {
+      if (e.key !== PERIOD_RECORDS_STORAGE_KEY) return;
+      if (remoteEnabled) {
+        void (async () => {
+          const sb = getSupabase();
+          if (!sb) return;
+          try {
+            await ensureSupabaseSession(sb);
+            const { data, error } = await fetchPeriodRecords(sb);
+            if (!error && data) {
+              lastPushedPeriodJsonRef.current = JSON.stringify(data);
+              setPeriodRecords(data);
+            }
+          } catch {
+            /* ignore */
+          }
+        })();
+      } else {
         setPeriodRecords(loadPeriodRecordsFromStorage());
       }
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
-  }, []);
+  }, [remoteEnabled]);
 
   const reloadSchedules = useCallback(async () => {
     const sb = getSupabase();

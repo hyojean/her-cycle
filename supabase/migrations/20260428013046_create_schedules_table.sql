@@ -23,6 +23,15 @@ FOR ALL
 USING ( auth.uid() = user_id )
 WITH CHECK ( auth.uid() = user_id );
 
+-- profiles 마이그레이션이 일부만 적용된 원격 DB에서도 동작하도록, 트리거용 함수를 여기서 한 번 더 정의합니다.
+CREATE OR REPLACE FUNCTION public.handle_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Attach updated_at trigger (function was created in the profiles migration)
 CREATE TRIGGER on_schedules_updated
   BEFORE UPDATE ON public.schedules

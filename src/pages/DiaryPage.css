@@ -535,6 +535,12 @@
   letter-spacing: -0.02em;
 }
 
+.diary-remote-loading {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #8e8e93;
+}
+
 .diary-write-box {
   background: #f7f8fa;
   border-radius: 16px;
@@ -623,6 +629,16 @@
 
 .diary-mini-btn:active {
   opacity: 0.9;
+}
+
+.diary-mini-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.diary-write-textarea:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 /* 생활 팁 */
