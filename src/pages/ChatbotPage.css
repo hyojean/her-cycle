@@ -174,3 +174,50 @@
   justify-content: center;
   cursor: pointer;
 }
+
+.send-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.suggestion-pill:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chat-config-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #8e8e93;
+  text-align: center;
+  width: 100%;
+}
+
+.chat-error-banner {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #c62828;
+  background: #ffebee;
+  border-radius: 8px;
+  width: 100%;
+  text-align: center;
+}
+
+.chat-bubble--typing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+
+.chat-spinner {
+  animation: chat-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes chat-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
