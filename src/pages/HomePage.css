@@ -253,10 +253,27 @@
   transform: scale(0.98);
 }
 
+.social-login-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
 .social-icon-wrapper {
   position: absolute;
   left: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.login-error-text {
+  width: 100%;
+  margin: 0 0 12px;
+  color: #d14343;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+  word-break: keep-all;
 }

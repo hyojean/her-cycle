@@ -5,10 +5,12 @@ import './CalendarPage.css';
 import './ProfilePage.css';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 import { ensureSupabaseSession } from '../lib/supabaseAuth';
+import { useAuthSession } from '../hooks/useAuthSession';
 
 export default function ProfilePage() {
   const navigate = useNavigate();
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
+  const { isAuthenticated, displayName, email } = useAuthSession();
 
   const handleConfirmLogout = async () => {
     const sb = getSupabase();
@@ -49,8 +51,10 @@ export default function ProfilePage() {
           <User size={32} />
         </div>
         <div className="profile-info">
-          <h1 className="text-h2">해피님</h1>
-          <p className="text-body text-secondary">오늘도 건강한 하루 보내세요!</p>
+          <h1 className="text-h2">{isAuthenticated ? `${displayName}님` : '게스트'}</h1>
+          <p className="text-body text-secondary">
+            {email ?? '로그인하면 생체 주기와 기록을 계정에 연결할 수 있어요.'}
+          </p>
         </div>
       </div>
 
@@ -72,13 +76,21 @@ export default function ProfilePage() {
       </div>
 
       <div className="account-actions">
-        <button type="button" className="text-btn" onClick={() => setLogoutModalOpen(true)}>
-          로그아웃
-        </button>
-        <span style={{ color: 'var(--border-color)' }}>|</span>
-        <button type="button" className="text-btn">
-          탈퇴
-        </button>
+        {isAuthenticated ? (
+          <>
+            <button type="button" className="text-btn" onClick={() => setLogoutModalOpen(true)}>
+              로그아웃
+            </button>
+            <span style={{ color: 'var(--border-color)' }}>|</span>
+            <button type="button" className="text-btn">
+              탈퇴
+            </button>
+          </>
+        ) : (
+          <button type="button" className="text-btn" onClick={() => navigate('/')}>
+            홈에서 로그인하기
+          </button>
+        )}
       </div>
 
       {logoutModalOpen ? (
