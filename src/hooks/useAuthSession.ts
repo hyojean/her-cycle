@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
+import { clearTrackedLogin, trackLoginCompleted } from '../lib/analytics';
 
 export type AuthStatus = {
   configured: boolean;
@@ -50,12 +51,18 @@ export function useAuthSession(): AuthStatus {
     let mounted = true;
     sb.auth.getSession().then(({ data }) => {
       if (!mounted) return;
+      if (data.session) trackLoginCompleted(data.session);
       setSession(data.session);
       setLoading(false);
     });
 
-    const { data } = sb.auth.onAuthStateChange((_event, nextSession) => {
+    const { data } = sb.auth.onAuthStateChange((event, nextSession) => {
       if (!mounted) return;
+      if (event === 'SIGNED_IN' && nextSession) {
+        trackLoginCompleted(nextSession);
+      } else if (event === 'SIGNED_OUT') {
+        clearTrackedLogin();
+      }
       setSession(nextSession);
       setLoading(false);
     });
